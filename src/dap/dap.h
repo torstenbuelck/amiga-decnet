@@ -5,7 +5,7 @@
  * from DAPGet (Mac FotoFix project); message layouts follow the DAP 5.6
  * specification and dnprogs libdap.
  *
- * Copyright (C) 2026  Torsten
+ * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #ifndef DAP_H

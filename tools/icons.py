@@ -10,7 +10,7 @@ Usage: icons.py OUTDIR [--png PREVIEW.png]
 
 Writes OUTDIR/{Install-DECnet,ReadMe,DECnet,Disk,Node,Dir,Text,Picture,File}.info.
 
-Copyright (C) 2026  Torsten
+Copyright (C) 2026  Torsten Bülck (tuti)
 SPDX-License-Identifier: GPL-2.0-or-later
 """
 import argparse

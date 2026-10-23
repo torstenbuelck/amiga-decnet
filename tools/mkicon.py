@@ -15,7 +15,7 @@ Usage:
             [--stack N] [--drawer X,Y,W,H] [--png PREVIEW.png]
 TYPE: disk drawer tool project garbage device kick
 
-Copyright (C) 2026  Torsten
+Copyright (C) 2026  Torsten Bülck (tuti)
 SPDX-License-Identifier: GPL-2.0-or-later
 """
 import argparse

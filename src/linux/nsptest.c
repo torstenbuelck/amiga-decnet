@@ -2,7 +2,7 @@
  * nsptest - host test of the NSP receive path: segments out of order,
  * a lost segment (NAK), duplicates.
  *
- * Copyright (C) 2026  Torsten
+ * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #include <stdio.h>

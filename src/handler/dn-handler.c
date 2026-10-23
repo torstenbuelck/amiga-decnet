@@ -25,7 +25,7 @@
  * Mount with an entry like config/Mountlist (GlobVec -1). AmigaOS 2.04.
  * Entry point is start() in start.c, which must be linked first.
  *
- * Copyright (C) 2026  Torsten
+ * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #include <exec/types.h>

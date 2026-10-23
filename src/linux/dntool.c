@@ -14,7 +14,7 @@
  * The tool is a DECnet node itself (default 23.203), so dnhost must not
  * run with the same address at the same time.
  *
- * Copyright (C) 2026  Torsten
+ * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #include <stdio.h>

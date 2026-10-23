@@ -20,7 +20,7 @@
  * NCP COPY KNOWN NODES this reads
  * the source's volatile database (nodes it currently knows about).
  *
- * Copyright (C) 2026  Torsten
+ * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #include <exec/types.h>

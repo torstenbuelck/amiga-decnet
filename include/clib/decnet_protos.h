@@ -21,7 +21,7 @@ extern "C" {
 
 
 /* decnet.library - DECnet Phase IV logical links for AmigaOS */
-/* Copyright (C) 2026  Torsten, GPL-2.0-or-later */
+/* Copyright (C) 2026  Torsten Bülck (tuti), GPL-2.0-or-later */
 struct DnLink * DnConnect(struct DnConnectReq * req);
 LONG DnRead(struct DnLink * link, APTR buffer, LONG length, LONG timeout);
 LONG DnWrite(struct DnLink * link, CONST_APTR buffer, LONG length);

@@ -31,7 +31,7 @@
  *
  * Requires AmigaOS 2.04 (V37), runs on a 68000.
  *
- * Copyright (C) 2026  Torsten
+ * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 

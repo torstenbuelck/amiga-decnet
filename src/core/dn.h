@@ -6,7 +6,7 @@
  * dn_input() and calls dn_tick() regularly (every 100 ms or so).
  * Single threaded: all calls must come from one task.
  *
- * Copyright (C) 2026  Torsten
+ * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #ifndef DN_H

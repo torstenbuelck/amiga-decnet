@@ -6,7 +6,7 @@
  * Message layouts follow the DECnet Network Management Functional
  * Specification 4.0 and dnprogs nml.
  *
- * Copyright (C) 2026  Torsten
+ * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #ifndef NML_H

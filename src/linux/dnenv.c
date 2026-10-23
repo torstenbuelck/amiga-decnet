@@ -6,7 +6,7 @@
  * ETH_P_ALL is used because a protocol-specific socket sees nothing on a
  * bridge port (eth0 in br0): the bridge takes the frames first.
  *
- * Copyright (C) 2026  Torsten
+ * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #include <arpa/inet.h>

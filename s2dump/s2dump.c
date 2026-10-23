@@ -13,7 +13,7 @@
  *   NOPROM  open non-promiscuous and register the DECnet multicasts
  *           (AB-00-00-03-00-00 all routers, AB-00-00-04-00-00 all endnodes)
  *
- * Copyright (C) 2026  Torsten
+ * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 

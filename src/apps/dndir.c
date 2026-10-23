@@ -4,7 +4,7 @@
  * Usage: dndir NODE/A,SPEC,USER/K,PASSWORD/K,NOBLOCK/S,VERBOSE/S
  *   SPEC default *.*; NOBLOCK for servers like FOTOFX
  *
- * Copyright (C) 2026  Torsten
+ * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #include <exec/types.h>

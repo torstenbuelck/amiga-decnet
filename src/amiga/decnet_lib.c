@@ -5,7 +5,7 @@
  * "DECnet" and waits for the reply. Built without the C library
  * (-nostartfiles -nostdlib); AmigaOS 2.04, 68000.
  *
- * Copyright (C) 2026  Torsten
+ * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #include <exec/types.h>

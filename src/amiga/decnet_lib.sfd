@@ -1,6 +1,6 @@
 ==id $Id: decnet_lib.sfd 1.0 (21.10.2026) $
 * decnet.library - DECnet Phase IV logical links for AmigaOS
-* Copyright (C) 2026  Torsten, GPL-2.0-or-later
+* Copyright (C) 2026  Torsten Bülck (tuti), GPL-2.0-or-later
 ==base _DECnetBase
 ==basetype struct Library *
 ==libname decnet.library

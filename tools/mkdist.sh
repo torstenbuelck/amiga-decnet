@@ -39,6 +39,10 @@ rm -r "$ICONS"
 for f in "$PKG/Install-DECnet" "$PKG/ReadMe" "$PKG"/S/* "$PKG"/Storage/*; do
 	sed -i 's/\r$//' "$f"
 done
+# Installer and ReadMe are UTF-8 in the repository; the Amiga uses ISO-8859-1.
+for f in "$PKG/Install-DECnet" "$PKG/ReadMe"; do
+	iconv -f UTF-8 -t ISO-8859-1 "$f" >"$f.tmp" && mv "$f.tmp" "$f"
+done
 
 # lh5, generic level-0 headers with '/' as path separator: what old Amiga
 # LhA versions (1.10 from 1991) understand. Files only; LhA creates the

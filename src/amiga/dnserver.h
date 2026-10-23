@@ -1,7 +1,7 @@
 /*
  * dnserver.h - dnetd's decnet.library server.
  *
- * Copyright (C) 2026  Torsten
+ * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #ifndef DNSERVER_H

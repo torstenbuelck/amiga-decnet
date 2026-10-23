@@ -5,7 +5,7 @@
  * Usage: dnhost [-i iface] [-a area.node] [-v]
  *   default: -i br0 (falls back to eth0) -a 23.203
  *
- * Copyright (C) 2026  Torsten
+ * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #include <stdio.h>

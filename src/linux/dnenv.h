@@ -3,7 +3,7 @@
  * simple blocking calls on top of it, the same model decnet.library will
  * give Amiga programs.
  *
- * Copyright (C) 2026  Torsten
+ * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #ifndef DNENV_H

@@ -5,7 +5,7 @@
  *   Text records get a linefeed; everything else is copied byte for byte.
  *   NOBLOCK for servers like FOTOFX.
  *
- * Copyright (C) 2026  Torsten
+ * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #include <exec/types.h>

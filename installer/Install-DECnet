@@ -12,7 +12,7 @@
 ;   ENVARC:DECnet/nodes      node names (kept if it already exists)
 ;   S:User-Startup           block that starts DECnet before TCP/IP
 ;
-; Copyright (C) 2026  Torsten
+; Copyright (C) 2026  Torsten Bülck (tuti)
 ; SPDX-License-Identifier: GPL-2.0-or-later
 
 (set #version "0.1")
@@ -411,7 +411,12 @@
 
 ; ---------------------------------------------------------------- main
 
-(welcome "Welcome to DECnet " #version " for the Amiga, a DECnet Phase IV endnode.")
+; The welcome window has room for about six lines above the user level
+; choice; longer text runs into it.
+(welcome "DECnet Phase IV Client " #version " for Amiga.\n\n"
+         "Copyright (C) 2026 Torsten Bülck (tuti)\n"
+         "https://forum.classic-computing.de\n"
+         "GNU GPL v2 or later, ABSOLUTELY NO WARRANTY.")
 
 ; At novice level the Installer answers every question with its default,
 ; but the address and name have none. The icon has MINUSER=AVERAGE; from

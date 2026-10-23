@@ -6,7 +6,7 @@
  * decnet.library is the application interface to the DECnet Phase IV
  * endnode dnetd: logical links to objects on other nodes.
  *
- * Copyright (C) 2026  Torsten
+ * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 

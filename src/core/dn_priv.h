@@ -1,7 +1,7 @@
 /*
  * dn_priv.h - internals shared by the core modules.
  *
- * Copyright (C) 2026  Torsten
+ * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #ifndef DN_PRIV_H

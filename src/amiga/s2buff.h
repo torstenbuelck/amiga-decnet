@@ -11,7 +11,7 @@
  * (in ROM); a program with a stuck request leaks the stub, the request,
  * its buffer and the port instead of freeing them.
  *
- * Copyright (C) 2026  Torsten
+ * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #ifndef S2BUFF_H

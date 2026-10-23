@@ -7,7 +7,7 @@
  * WRITE_WINDOW segments are unacknowledged; everything else is replied
  * at once.
  *
- * Copyright (C) 2026  Torsten
+ * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #include <exec/types.h>

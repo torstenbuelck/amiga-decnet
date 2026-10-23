@@ -6,7 +6,7 @@
  * acks, flow control as requested by the remote end, retransmission and
  * segmentation.
  *
- * Copyright (C) 2026  Torsten
+ * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #include <string.h>

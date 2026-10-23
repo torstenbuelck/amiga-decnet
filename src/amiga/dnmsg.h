@@ -5,7 +5,7 @@
  * waits for the reply. dnetd copies data in and out while it holds the
  * message, so the caller's buffers are safe.
  *
- * Copyright (C) 2026  Torsten
+ * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #ifndef DNMSG_H

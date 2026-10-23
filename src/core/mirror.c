@@ -4,7 +4,7 @@
  * length in the connect data and returns each message with its first byte
  * (function code 0 = loop) replaced by 1 (success).
  *
- * Copyright (C) 2026  Torsten
+ * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #include "dn_priv.h"

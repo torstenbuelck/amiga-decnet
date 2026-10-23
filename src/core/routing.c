@@ -5,7 +5,7 @@
  * Endnode hellos, designated router, on-Ethernet cache, long/short data
  * packets. Also holds the core setup and logging.
  *
- * Copyright (C) 2026  Torsten
+ * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #include <stdarg.h>

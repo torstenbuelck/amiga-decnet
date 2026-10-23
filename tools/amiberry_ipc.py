@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import socket, sys
 s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 s.connect("/run/user/1000/amiberry.sock")

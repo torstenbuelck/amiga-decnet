@@ -10,7 +10,7 @@
  *
  * Usage: dnhello ADDR=area.node [DEVICE=uaenet.device] [UNIT=n] [TIMER=s]
  *
- * Copyright (C) 2026  Torsten
+ * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
