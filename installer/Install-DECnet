@@ -136,7 +136,7 @@
 		         "reboot, when it starts before TCP/IP."
 		         (help "dncheck checks that the driver accepts the DECnet station "
 		               "address AA-00-04-00-xx-xx and that DECnet frames arrive."))
-		(set #rc (run (cat "C/dncheck DEVICE=\"" #device "\" UNIT=" #unit " ADDR=" #addr
+		(set #rc (run (cat "C/dncheck DEVICE=\"" #device "\" UNIT=" #unit " ADDR=" #addr " CLOSEHINT"
 		                   " >CON:0/380/640/170/DECnet-Check/CLOSE/WAIT")))
 		(set #again 0)
 		(if (= #rc 5)
@@ -317,7 +317,8 @@
 	(makedir "ENVARC:DECnet" (prompt "") (help ""))
 	(if (exists "ENVARC:DECnet/nodes")
 		(message "Your node list ENVARC:DECnet/nodes is kept.\n\n"
-		         "If this Amiga's name or address changed, edit its line there."
+		         "If this Amiga's name or address changed, edit its line there "
+		         "(it is copied to ENV:DECnet/nodes now)."
 		         (help "The installer never overwrites the node list, because it "
 		               "holds user names and passwords."))
 		(
@@ -401,7 +402,8 @@
 
 	(exit "DECnet " #version " is installed in \"" #target "\".\n\n"
 	      "Files on other nodes are in DN: (e.g. DN:NODE/file). "
-	      "Add user names and passwords in ENVARC:DECnet/nodes. "
+	      "Add user names and passwords in ENVARC:DECnet/nodes, then copy it "
+	      "to ENV:DECnet/nodes (or reboot): DN: reads the copy in ENV:. "
 	      "Read " (tackon #target "ReadMe") " for more.\n\n"
 	      "Please reboot before using TCP/IP, so that DECnet configures the "
 	      "network card first." (quiet))

@@ -52,7 +52,7 @@ struct Library *DECnetBase;
 struct Library *UtilityBase;
 
 
-static const char version[] = "$VER: dn-handler 0.6 (23.10.2026)";
+static const char version[] = "$VER: dn-handler 0.7 (23.10.2026)";
 
 #define VOLNAME     "DECnet Nodes"   /* not "DECnet": that would hide the DECnet: assign */
 #define CACHE_TICKS (10 * TICKS_PER_SECOND)
@@ -120,6 +120,19 @@ static int ieq(const char *a, const char *b)
 			return 0;
 	}
 	return *a == *b;
+}
+
+/* a begins with the n characters of b, case ignored */
+static int iprefix(const char *a, const char *b, int n)
+{
+	for (; n > 0; a++, b++, n--) {
+		char x = *a, y = *b;
+		if (x >= 'a' && x <= 'z') x -= 32;
+		if (y >= 'a' && y <= 'z') y -= 32;
+		if (x != y)
+			return 0;
+	}
+	return 1;
 }
 
 static void bstr_to_c(BSTR b, char *out, int size)
@@ -875,6 +888,8 @@ static struct dirlist *get_list(const char *path)
 	return l;
 }
 
+static void fc_forget(const char *path);
+
 /* Forget the cached listings of path and of its parent after a change. */
 static void list_changed(const char *path)
 {
@@ -887,6 +902,113 @@ static void list_changed(const char *path)
 	for (i = 0; i < NCACHE; i++)
 		if (cache[i] && (ieq(cache[i]->path, path) || ieq(cache[i]->path, parent)))
 			cache[i]->when = ticks() - CACHE_TICKS - 1;
+	fc_forget(path);
+}
+
+/* ---- small files read ahead, kept a few seconds -------------------------------------
+   Workbench and the datatypes open a file several times in a row (an icon
+   four times, a text seven times seen), and each open costs a new DAP
+   connection of about half a second. So a file up to FCACHE_MAX is read
+   whole at its first open and the link dropped at once; opens within
+   FCACHE_TICKS take it from memory, without a connection or a listing. */
+
+#define FCACHE_MAX    (32 * 1024)
+#define FCACHE_TICKS  (10 * TICKS_PER_SECOND)
+#define NFCACHE       4
+
+struct fcache {
+	char path[MAXPATH];         /* "" once dropped */
+	struct dent info;
+	UBYTE *data;
+	LONG size;
+	ULONG when;                 /* ticks */
+	int users;                  /* open files reading data */
+};
+
+static struct fcache *fcache[NFCACHE];
+
+static void fc_free(struct fcache *c)
+{
+	FreeVec(c->data);
+	FreeVec(c);
+}
+
+/* Takes slot i out of the cache; freed now or by its last reader. */
+static void fc_drop(int i)
+{
+	struct fcache *c = fcache[i];
+
+	fcache[i] = NULL;
+	c->path[0] = 0;
+	if (!c->users)
+		fc_free(c);
+}
+
+static void fc_release(struct fcache *c)
+{
+	if (--c->users == 0 && !c->path[0])
+		fc_free(c);
+}
+
+static void fc_expire(void)
+{
+	ULONG now = ticks();
+	int i;
+
+	for (i = 0; i < NFCACHE; i++)
+		if (fcache[i] && now - fcache[i]->when >= FCACHE_TICKS)
+			fc_drop(i);
+}
+
+static struct fcache *fc_get(const char *path)
+{
+	int i;
+
+	fc_expire();
+	for (i = 0; i < NFCACHE; i++)
+		if (fcache[i] && ieq(fcache[i]->path, path))
+			return fcache[i];
+	return NULL;
+}
+
+/* Keeps data (taking it over) under path. NULL: not kept, data is still
+   the caller's. */
+static struct fcache *fc_put(const char *path, const struct dent *info, UBYTE *data, LONG size)
+{
+	struct fcache *c;
+	int i, slot = -1;
+
+	for (i = 0; i < NFCACHE; i++) {
+		if (!fcache[i]) {
+			slot = i;
+			break;
+		}
+		if (slot < 0 || fcache[i]->when < fcache[slot]->when)
+			slot = i;
+	}
+	if (!(c = AllocVec(sizeof *c, MEMF_ANY | MEMF_CLEAR)))
+		return NULL;
+	if (fcache[slot])
+		fc_drop(slot);
+	strcpy(c->path, path);
+	c->info = *info;
+	c->data = data;
+	c->size = size;
+	c->when = ticks();
+	fcache[slot] = c;
+	return c;
+}
+
+/* Forgets path and everything below it after a change. */
+static void fc_forget(const char *path)
+{
+	int i, n = strlen(path);
+
+	for (i = 0; i < NFCACHE; i++)
+		if (fcache[i] && (ieq(fcache[i]->path, path) ||
+		    ((int)strlen(fcache[i]->path) > n && fcache[i]->path[n] == '/' &&
+		     iprefix(fcache[i]->path, path, n))))
+			fc_drop(i);
 }
 
 /* ---- locks ------------------------------------------------------------------------- */
@@ -1053,6 +1175,8 @@ struct myfile {
 	LONG memsize;
 	UBYTE *memown;              /* mem is a text file read ahead, ours to free */
 	int exact;                  /* f.size is the exact stream size */
+	int rderr;                  /* a read failed: not complete */
+	struct fcache *fc;          /* mem is this cached file's data */
 	int sink;                   /* a .info written by Workbench: discarded */
 };
 
@@ -1091,8 +1215,10 @@ static BOOL file_fill(struct myfile *f)
 	r = dap_read_record(f->c.d, &p, &n);
 	if (r <= 0) {
 		f->eof = 1;
-		if (r < 0)
+		if (r < 0) {
+			f->rderr = 1;
 			dlog("read %s: %s", f->path, f->c.d->error);
+		}
 		return FALSE;
 	}
 	if (n + 1 > f->bufsize) {
@@ -1478,6 +1604,7 @@ static LONG do_findinput(struct DosPacket *pkt, LONG *err)
 	struct mylock *base = lock_of(pkt->dp_Arg2);
 	char name[MAXPATH], path[MAXPATH], node[24];
 	struct myfile *f;
+	struct fcache *fc;
 	int isdir, k;
 
 	bstr_to_c(pkt->dp_Arg3, name, sizeof name);
@@ -1511,6 +1638,16 @@ static LONG do_findinput(struct DosPacket *pkt, LONG *err)
 		*err = ERROR_OBJECT_NOT_FOUND;
 		return DOSFALSE;
 	}
+	if ((fc = fc_get(path)) != NULL) {
+		fc->users++;
+		f->fc = fc;
+		f->mem = fc->data;
+		f->memsize = fc->size;
+		f->info = fc->info;
+		dlog("open %s (cached, size %ld)", path, fc->size);
+		fh->fh_Arg1 = (LONG)f;
+		return DOSTRUE;
+	}
 	if ((*err = lookup(path, &isdir, &f->info)) != 0 || isdir) {
 		FreeVec(f);
 		if (!*err)
@@ -1529,6 +1666,24 @@ static LONG do_findinput(struct DosPacket *pkt, LONG *err)
 		return DOSFALSE;
 	}
 	dlog("open %s (%s, size %ld)", path, f->f.text ? "text" : "binary", f->f.size);
+	if (f->info.size >= 0 && f->info.size <= FCACHE_MAX) {
+		/* small: read it whole now, keep it for the next opens */
+		if (file_to_mem(f) && !f->rderr &&
+		    (fc = fc_put(path, &f->info, f->memown, f->memsize)) != NULL) {
+			fc->users++;
+			f->fc = fc;
+			f->memown = NULL;
+			f->mem = fc->data;
+		} else if (!f->mem) {
+			/* larger than listed after all: was read to its end */
+			file_stop(f);
+			f->rderr = 0;
+			if ((*err = file_start(f)) != 0) {
+				FreeVec(f);
+				return DOSFALSE;
+			}
+		}
+	}
 	fh->fh_Arg1 = (LONG)f;
 	return DOSTRUE;
 }
@@ -1546,6 +1701,8 @@ static LONG do_end(struct myfile *f, LONG *err)
 		FreeVec(f->wbuf);
 	if (f->memown)
 		FreeVec(f->memown);
+	if (f->fc)
+		fc_release(f->fc);
 	FreeVec(f);
 	return *err ? DOSFALSE : DOSTRUE;
 }

@@ -20,5 +20,7 @@
 ; (DnNodeAddr) and DN:.
 ;
 ; This file is ENVARC:DECnet/nodes; it is copied to ENV:DECnet/nodes
-; at boot. After editing it, copy it to ENV:DECnet/nodes as well (or
-; reboot). DN: and the dn tools read the copy in ENV:.
+; at boot. DN: and the dn tools read only the copy in ENV:. After
+; editing this file, make the change count at once with
+;   Copy ENVARC:DECnet/nodes ENV:DECnet/nodes
+; (or reboot). Edits made only in ENV: are lost at the next boot.

@@ -21,8 +21,8 @@
 
 #define LIBNAME   "decnet.library"
 #define VERSION   1
-#define REVISION  0
-#define IDSTRING  "decnet.library 1.0 (21.10.2026)\r\n"
+#define REVISION  1
+#define IDSTRING  "decnet.library 1.1 (23.10.2026)\r\n"
 
 #define REG(r, decl) register decl __asm(#r)
 
@@ -204,8 +204,8 @@ static UBYTE upper(UBYTE c)
 LONG LibDnNodeAddr(REG(a0, CONST_STRPTR name), REG(a6, struct Library *base))
 {
 	const UBYTE *end;
-	UBYTE *buf, *p;
-	LONG a, n, result = -1;
+	UBYTE line[200], *p;
+	LONG a, result = -1;
 	BPTR fh;
 
 	(void)base;
@@ -214,16 +214,9 @@ LONG LibDnNodeAddr(REG(a0, CONST_STRPTR name), REG(a6, struct Library *base))
 		return a;
 	if (!DOSBase || !(fh = Open((STRPTR)"ENV:DECnet/nodes", MODE_OLDFILE)))
 		return -1;
-	buf = AllocVec(4097, MEMF_ANY);
-	if (!buf) {
-		Close(fh);
-		return -1;
-	}
-	n = Read(fh, buf, 4096);
-	Close(fh);
-	buf[n > 0 ? n : 0] = 0;
-	for (p = buf; *p && result < 0; ) {
+	while (result < 0 && FGets(fh, (STRPTR)line, sizeof line)) {
 		const UBYTE *q = (const UBYTE *)name;
+		p = line;
 		while (*p == ' ' || *p == '\t')
 			p++;
 		while (*q && upper(*p) == upper(*q)) {
@@ -235,12 +228,8 @@ LONG LibDnNodeAddr(REG(a0, CONST_STRPTR name), REG(a6, struct Library *base))
 				p++;
 			result = parse_addr(p, NULL);
 		}
-		while (*p && *p != '\n')
-			p++;
-		if (*p)
-			p++;
 	}
-	FreeVec(buf);
+	Close(fh);
 	return result;
 }
 

@@ -75,8 +75,19 @@ For example:
 
   VAX1    1.10   USER guest PASSWORD secret PURGE SHOW
 
-ENVARC:DECnet/nodes is copied to ENV:DECnet/nodes at boot; after
-editing it, copy it there too (or reboot).
+Where to edit: as with all AmigaOS settings, DN: and the programs read
+only ENV:DECnet/nodes, the copy in RAM that DECnet-Start makes from
+ENVARC:DECnet/nodes at boot.
+
+  - Edit ENVARC:DECnet/nodes to keep a change, then copy it over so
+    that it counts at once (or reboot):
+
+      Copy ENVARC:DECnet/nodes ENV:DECnet/nodes
+
+  - Edit ENV:DECnet/nodes only to try something out: it counts at
+    once and is gone after the next reboot.
+
+dnnodes ... UPDATE writes new nodes to both files.
 
 To take the names another node knows (like NCP COPY KNOWN NODES):
 

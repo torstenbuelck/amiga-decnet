@@ -15,7 +15,8 @@
  * file are added; existing lines (access data, options) are never
  * changed. The new lines follow a comment naming the source and date.
  * FILE defaults to ENV:DECnet/nodes; then UPDATE appends the same lines to
- * ENVARC:DECnet/nodes too, if it exists, so they survive a reboot. Like
+ * ENVARC:DECnet/nodes too, if it exists, so they survive a reboot (the
+ * ones not in that file already, as it may have been edited). Like
  * NCP COPY KNOWN NODES this reads
  * the source's volatile database (nodes it currently knows about).
  *
@@ -35,7 +36,7 @@
 
 #include "../nml/nml.h"
 
-static const char version[] = "$VER: dnnodes 0.2 (23.10.2026)";
+static const char version[] = "$VER: dnnodes 0.3 (23.10.2026)";
 unsigned long __stack = 16384;
 
 #define MAXNODES 1024
@@ -331,10 +332,20 @@ int main(void)
 			LONG alen;
 			char *abuf = read_file(ARCFILE, &alen);
 			if (abuf) {
-				if (append(ARCFILE, from, alen > 0 && abuf[alen - 1] != '\n'))
-					Printf("Also added to %s.\n", (STRPTR)ARCFILE);
-				else
-					PrintFault(IoErr(), (STRPTR)ARCFILE);
+				/* ENVARC: may differ (edited there): check against
+				   its own lines, or nodes would end up twice */
+				LONG anew = 0;
+				nhave = 0;
+				parse_file(abuf, alen);
+				for (i = 0; i < ngot; i++)
+					if (!known(&got[i]))
+						anew++;
+				if (anew > 0) {
+					if (append(ARCFILE, from, alen > 0 && abuf[alen - 1] != '\n'))
+						Printf("%ld added to %s.\n", anew, (STRPTR)ARCFILE);
+					else
+						PrintFault(IoErr(), (STRPTR)ARCFILE);
+				}
 				FreeVec(abuf);
 			}
 		}

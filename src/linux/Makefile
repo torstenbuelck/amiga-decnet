@@ -3,7 +3,7 @@ CFLAGS = -O2 -g -Wall -Wextra -std=gnu99
 CORE = ../core/routing.c ../core/nsp.c ../core/mirror.c
 HDRS = ../core/dn.h ../core/dn_priv.h dnenv.h
 
-all: dnhost dntool
+all: dnhost dntool nsptest
 
 dnhost: dnhost.c dnenv.c $(CORE) $(HDRS)
 	$(CC) $(CFLAGS) -o $@ dnhost.c dnenv.c $(CORE)
@@ -11,5 +11,11 @@ dnhost: dnhost.c dnenv.c $(CORE) $(HDRS)
 dntool: dntool.c dnenv.c ../dap/dap.c ../dap/dap.h ../nml/nml.c ../nml/nml.h $(CORE) $(HDRS)
 	$(CC) $(CFLAGS) -o $@ dntool.c dnenv.c ../dap/dap.c ../nml/nml.c $(CORE)
 
+nsptest: nsptest.c $(CORE) $(HDRS)
+	$(CC) $(CFLAGS) -o $@ nsptest.c $(CORE)
+
+test: nsptest
+	./nsptest
+
 clean:
-	rm -f dnhost dntool
+	rm -f dnhost dntool nsptest

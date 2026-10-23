@@ -5,10 +5,10 @@ CORE_H = ../core/dn.h ../core/dn_priv.h
 
 all: dnetd decnet.library dncheck dnstartup
 
-dnetd: dnetd.c dnserver.c dnserver.h dnmsg.h $(CORE) $(CORE_H)
+dnetd: dnetd.c s2buff.h dnserver.c dnserver.h dnmsg.h $(CORE) $(CORE_H)
 	$(CC) $(CFLAGS) -noixemul -o $@ dnetd.c dnserver.c $(CORE)
 
-dncheck: dncheck.c
+dncheck: dncheck.c s2buff.h
 	$(CC) $(CFLAGS) -noixemul -o $@ dncheck.c
 
 dnstartup: dnstartup.c

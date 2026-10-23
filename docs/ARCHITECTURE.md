@@ -280,6 +280,43 @@ Kopie der Festplatte: `CONFIG=~/Amiberry/Configurations/DECnet-InstTest.uae
   `f.text = 0` als Merker, danach fehlten beim erneuten Lesen die Zeilenenden
   (jetzt eigenes Feld `exact`). Kopie per Copy bytegenau geprüft.
 
+### Echter A3000: Befunde und Fixes (23.10.2026 abends)
+Test auf dem echten A3000 (OS 3.5, AmiTCP 4.1, a2065.device Unit 0) bestanden;
+Mitschnitt `captures/2026-10-23-a3000-live.pcap`. Danach behoben (noch nicht
+auf echter Hardware nachgetestet):
+* **a2065.device gibt einen abgebrochenen `CMD_READ` nie zurück.** `WaitIO()`
+  nach `AbortIO()` hängt dann für immer (dncheck 0.2, dnetd beim Beenden).
+  Endet das Programm trotzdem, ruft der Treiber beim nächsten Frame die
+  Copy-Hooks im entladenen Code auf → Guru. Jetzt (`src/amiga/s2buff.h`):
+  `s2_abort()` wartet höchstens ~2 s; die Hooks sind ein 18-Byte-Stub in
+  AllocVec-Speicher, der nur `CopyMem` aus dem ROM aufruft. Bleibt ein Read
+  beim Treiber, lassen dncheck 0.4 und dnetd 0.4 Stub, Request, Puffer, Port
+  (`PA_IGNORE`) und das geöffnete Device absichtlich liegen.
+* **Frames außer der Reihe.** Beim Lesen einer 270-KB-Datei von HOWIE
+  verarbeitete der A3000 Segment 73 vor 72 (am Draht in richtiger
+  Reihenfolge); NSP verwarf daraufhin den Rest des Bursts, VMS wiederholte
+  erst nach 18,4 s. Der Treiber sortiert offenbar um, wenn alle Reads belegt
+  sind. Jetzt: `NREAD` 32 statt 8, und NSP hält bis zu 16 vorauslaufende
+  Segmente pro Link (Fenster 64) und liefert sie nach, sobald die Lücke
+  gefüllt ist; besteht eine Lücke 200 ms, geht ein NAK hinaus (danach jede
+  Sekunde), VMS wiederholt dann sofort. Host-Test: `make -C src/linux test`.
+* **„Retransmit nach 64 ms“** war keiner: HOWIE schickte LS „stop“, dann
+  `NAK=52` + LS „resume“; Segment 53 neu zu senden war richtig.
+* **Viele FAL-Verbindungen durch die Workbench** (Icon 4×, Text 7× geöffnet,
+  je ~0,5 s Verbindungsaufbau): dn-handler 0.7 liest Dateien bis 32 KB beim
+  ersten Öffnen ganz und schließt den Link sofort; weitere Öffnungen innerhalb
+  10 s kommen aus dem Speicher (4 Einträge), ohne Verbindung und ohne
+  Listing. Schreiben, Löschen, Umbenennen verwerfen den Eintrag.
+* **Nur `ENVARC:DECnet/nodes` bearbeitet** wirkte erst nach dem Neustart. Das
+  ist AmigaOS-Konzept und bleibt so (Entscheidung 23.10.2026): Handler und
+  Library lesen nur `ENV:`, ENVARC: ist der Vorrat für den Boot. Ein
+  Zwischenstand „die neuere Datei gewinnt“ wurde wieder verworfen.
+  Stattdessen erklären Dateikopf, ReadMe und Installer-Schlusstext den
+  `Copy ENVARC:DECnet/nodes ENV:DECnet/nodes`. dnnodes 0.3 schreibt bei UPDATE
+  in beide Dateien und prüft ENVARC: gegen den eigenen Inhalt (keine
+  doppelten Zeilen). Nebenbefund: `DnNodeAddr()` las nur die ersten 4096 Bytes
+  der Datei; decnet.library 1.1 liest zeilenweise.
+
 ### Knotennamen per NML (Stand 22.10.2026)
 * DECnet Phase IV hat keinen Namensdienst, Hellos tragen keine Namen.
   `dnnodes FROM=<knoten> [UPDATE] [FILE=…]` liest wie `NCP COPY KNOWN NODES`

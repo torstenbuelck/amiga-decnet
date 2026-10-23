@@ -9,6 +9,7 @@
 /src/handler/dn-handler
 /src/linux/dnhost
 /src/linux/dntool
+/src/linux/nsptest
 /dnhello/dnhello
 /s2dump/s2dump
 /dist/

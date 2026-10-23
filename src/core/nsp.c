@@ -40,6 +40,10 @@
 #define RTO_INITIAL     3000UL
 #define RTO_MIN         500UL
 #define RTO_MAX         30000UL
+#define RXWINDOW        64      /* how far ahead of rx_last a segment is kept */
+#define RXCACHE         16      /* out-of-order segments kept per link */
+#define NAK_MS          200UL   /* gap age before the first NAK */
+#define NAK_REPEAT_MS   1000UL
 
 enum { L_FREE, L_CR, L_CC, L_RUN, L_DI, L_CI };
 
@@ -49,6 +53,18 @@ struct seg {
 	dn_u8 flags;            /* BOM/EOM */
 	dn_u8 txcount;
 	dn_u32 sent;
+	unsigned len;
+	dn_u8 data[1];
+};
+
+/* A data segment that came before the one we expect. Some SANA-II drivers
+   (a2065.device on a real A3000, under a burst) hand frames over out of
+   order; without the cache the whole rest of the burst would be thrown
+   away and VMS would retransmit only after its timeout (18 s seen). */
+struct rxseg {
+	struct rxseg *next;
+	dn_u16 num;
+	dn_u8 flags;
 	unsigned len;
 	dn_u8 data[1];
 };
@@ -66,6 +82,10 @@ struct dn_link {
 	struct seg *txq;        /* unacknowledged / unsent, in order */
 	dn_u16 rx_last;         /* last segment received in order */
 	int ack_pending;
+	struct rxseg *rxq;      /* out-of-order segments, unsorted */
+	int rxqlen;
+	dn_u32 gap_since;       /* first out-of-order segment, 0 = no gap */
+	dn_u32 nak_time;        /* last NAK sent for this gap */
 	long flowcount;         /* segment/message request count from remote */
 	int stopped;            /* remote said "do not send data" */
 
@@ -185,9 +205,15 @@ static void link_free(struct dn_link *l)
 {
 	struct seg *s, *n;
 
+	struct rxseg *r, *rn;
+
 	for (s = l->txq; s; s = n) {
 		n = s->next;
 		xfree(s);
+	}
+	for (r = l->rxq; r; r = rn) {
+		rn = r->next;
+		xfree(r);
 	}
 	xfree(l->rxbuf);
 	xfree(l->ci_msg);
@@ -237,6 +263,16 @@ static void send_data_ack(struct dn_link *l)
 	PUT16(msgbuf + n, 0x8000 | l->rx_last); n += 2;
 	send_msg(l, n);
 	l->ack_pending = 0;
+}
+
+/* Negative ack: all up to rx_last arrived, retransmit what follows. */
+static void send_data_nak(struct dn_link *l)
+{
+	unsigned n = hdr(msgbuf, MSG_DATAACK, l);
+	PUT16(msgbuf + n, 0x9000 | l->rx_last); n += 2;
+	send_msg(l, n);
+	l->ack_pending = 0;
+	l->nak_time = dn_g.now;
 }
 
 static void send_oth_ack(struct dn_link *l)
@@ -518,22 +554,91 @@ static void deliver(struct dn_link *l, const dn_u8 *p, unsigned len, dn_u8 flags
 	}
 }
 
+/* Keeps a segment that arrived ahead of rx_last + 1. */
+static void rxq_add(struct dn_link *l, dn_u16 num, dn_u8 flags, const dn_u8 *p, unsigned len)
+{
+	struct rxseg *r;
+
+	if (SEQ(num - l->rx_last) > RXWINDOW || l->rxqlen >= RXCACHE)
+		return;
+	for (r = l->rxq; r; r = r->next)
+		if (r->num == num)
+			return;                 /* have it already */
+	r = xalloc(sizeof *r + len);
+	if (!r)
+		return;
+	r->num = num;
+	r->flags = flags;
+	r->len = len;
+	memcpy(r->data, p, len);
+	r->next = l->rxq;
+	l->rxq = r;
+	l->rxqlen++;
+}
+
+static struct rxseg *rxq_take(struct dn_link *l, dn_u16 num)
+{
+	struct rxseg **pp, *r;
+
+	for (pp = &l->rxq; (r = *pp) != 0; pp = &r->next)
+		if (r->num == num) {
+			*pp = r->next;
+			l->rxqlen--;
+			return r;
+		}
+	return 0;
+}
+
+/* Drops kept segments that are no longer ahead of rx_last. */
+static void rxq_prune(struct dn_link *l)
+{
+	struct rxseg **pp, *r;
+
+	for (pp = &l->rxq; (r = *pp) != 0; )
+		if (!seq_lt(l->rx_last, r->num)) {
+			*pp = r->next;
+			l->rxqlen--;
+			xfree(r);
+		} else {
+			pp = &r->next;
+		}
+}
+
 static void handle_data(struct dn_link *l, dn_u8 flags, const dn_u8 *p, unsigned len)
 {
 	unsigned n = acks(l, p, len, 0);
-	dn_u16 num;
+	dn_u16 num, loc = l->locaddr;
+	struct rxseg *r;
 
 	if (n + 2 > len)
 		return;
 	num = SEQ(GET16(p + n));
 	n += 2;
+	l->ack_pending = 1;     /* in order: ack it; else (re)ack what we have */
 	if (num == SEQ(l->rx_last + 1)) {
 		l->rx_last = num;
-		l->ack_pending = 1;
 		deliver(l, p + n, len - n, flags);
-	} else {
-		/* duplicate or out of order: (re)acknowledge what we have */
-		l->ack_pending = 1;
+		/* segments that came early follow on now; the callback may
+		   have closed the link */
+		while (l->state == L_RUN && l->locaddr == loc &&
+		       (r = rxq_take(l, SEQ(l->rx_last + 1))) != 0) {
+			l->rx_last = r->num;
+			deliver(l, r->data, r->len, r->flags);
+			xfree(r);
+		}
+		if (l->state == L_RUN && l->locaddr == loc) {
+			rxq_prune(l);
+			/* still a hole further on: give it its own NAK delay */
+			l->gap_since = l->rxq ? (dn_g.now ? dn_g.now : 1) : 0;
+			l->nak_time = 0;
+		}
+	} else if (seq_lt(l->rx_last, num)) {
+		/* ahead: a segment before it is missing (or late) */
+		rxq_add(l, num, flags, p + n, len - n);
+		if (!l->gap_since) {
+			l->gap_since = dn_g.now ? dn_g.now : 1;
+			l->nak_time = 0;
+		}
 	}
 }
 
@@ -735,6 +840,15 @@ void dn_nsp_tick(void)
 				send_di(l);
 			break;
 		case L_RUN:
+			/* a gap that the next segments did not fill: ask for a
+			   retransmission now instead of waiting for the sender's
+			   timeout */
+			if (l->gap_since && dn_g.now - l->gap_since >= NAK_MS &&
+			    (!l->nak_time || dn_g.now - l->nak_time >= NAK_REPEAT_MS)) {
+				DN_LOG(DN_LOG_DEBUG, (DN_LOG_DEBUG, "link %04x: segment %u missing, NAK",
+				       l->locaddr, SEQ(l->rx_last + 1)));
+				send_data_nak(l);
+			}
 			s = l->txq;
 			if (s && s->txcount && dn_g.now - s->sent >= l->rto) {
 				if (s->txcount > MAXRETRY) {

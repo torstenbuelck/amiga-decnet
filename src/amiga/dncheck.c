@@ -1,7 +1,7 @@
 /*
  * dncheck - check whether a SANA-II device can carry DECnet.
  *
- * Usage: dncheck DEVICE=name ADDR=area.node [UNIT=n] [WAIT=seconds]
+ * Usage: dncheck DEVICE=name ADDR=area.node [UNIT=n] [WAIT=seconds] [CLOSEHINT]
  *
  * Tests, in this order, what dnetd needs from the driver:
  *   1. the device opens and is Ethernet
@@ -13,6 +13,9 @@
  *   5. DECnet frames (ethertype 0x6003, e.g. router hellos) actually arrive
  *      within WAIT seconds (default 20, 0 skips the test; skipped as well
  *      while dnetd runs, which takes the frames itself)
+ *
+ * CLOSEHINT ends the output with a line asking to close the window; the
+ * installer sets it, as it runs dncheck in a CON: window with WAIT.
  *
  * A SANA-II unit can be configured only once per boot, and whoever comes
  * first sets the address. Run dncheck before AmiTCP or any other network
@@ -46,40 +49,22 @@
 
 #include <string.h>
 
+#include "s2buff.h"
+
 #define DN_ETHERTYPE 0x6003
 #define FRAMELEN     1518
 
-static const char version[] = "$VER: dncheck 0.2 (23.10.2026)";
+static const char version[] = "$VER: dncheck 0.4 (23.10.2026)";
 
 static const UBYTE all_endnodes[6] = { 0xab, 0x00, 0x00, 0x04, 0x00, 0x00 };
-
-static BOOL CopyToBuff(register APTR to __asm("a0"),
-                       register APTR from __asm("a1"),
-                       register ULONG n __asm("d0"))
-{
-	CopyMem(from, to, n);
-	return TRUE;
-}
-
-static BOOL CopyFromBuff(register APTR to __asm("a0"),
-                         register APTR from __asm("a1"),
-                         register ULONG n __asm("d0"))
-{
-	CopyMem(from, to, n);
-	return TRUE;
-}
-
-static struct TagItem buffertags[] = {
-	{ S2_CopyToBuff, (ULONG)CopyToBuff },
-	{ S2_CopyFromBuff, (ULONG)CopyFromBuff },
-	{ TAG_DONE, 0 }
-};
 
 static struct MsgPort *port;
 static struct IOSana2Req *req;
 static BOOL dev_open;
 static UBYTE mymac[6];
 static UBYTE *buf;
+static struct TagItem *buffertags;
+static BOOL read_stuck;       /* the driver still owns req and buf */
 
 static void print_mac(const UBYTE *m)
 {
@@ -170,9 +155,10 @@ static BOOL wait_frame(LONG secs, BOOL raw, UBYTE *src)
 		}
 		Delay(10);
 	}
-	if (!CheckIO((struct IORequest *)req))
-		AbortIO((struct IORequest *)req);
-	WaitIO((struct IORequest *)req);
+	if (!s2_abort((struct IORequest *)req)) {
+		read_stuck = TRUE;
+		return FALSE;
+	}
 	if (req->ios2_Req.io_Error == 0) {
 		got = TRUE;
 		if (raw && req->ios2_DataLength >= 14)
@@ -185,8 +171,8 @@ static BOOL wait_frame(LONG secs, BOOL raw, UBYTE *src)
 
 int main(void)
 {
-	static const char template[] = "DEVICE/A,ADDR/A,UNIT/K/N,WAIT/K/N";
-	LONG args[4] = { 0, 0, 0, 0 };
+	static const char template[] = "DEVICE/A,ADDR/A,UNIT/K/N,WAIT/K/N,CLOSEHINT/S";
+	LONG args[5] = { 0, 0, 0, 0, 0 };
 	struct RDArgs *rda;
 	const char *devname;
 	LONG unit = 0, wait = 20;
@@ -220,7 +206,8 @@ int main(void)
 	port = CreateMsgPort();
 	req = port ? (struct IOSana2Req *)CreateIORequest(port, sizeof(struct IOSana2Req)) : NULL;
 	buf = AllocVec(FRAMELEN, MEMF_ANY);
-	if (!req || !buf) {
+	buffertags = s2buff_create();
+	if (!req || !buf || !buffertags) {
 		Printf("dncheck: out of memory\n");
 		goto out;
 	}
@@ -335,6 +322,9 @@ int main(void)
 		} else {
 			Printf("nothing\n");
 			Printf("   No DECnet router on this LAN, or the frames are not delivered.\n");
+			if (read_stuck)
+				Printf("   The driver did not give back the aborted read request\n"
+				       "   (no AbortIO support); dncheck leaves it with the driver.\n");
 		}
 	} else {
 		Printf("5. Traffic test skipped (WAIT=0)\n");
@@ -363,13 +353,24 @@ int main(void)
 		Printf("        The card keeps this address until the next reboot.\n");
 
 out:
-	close_device();
-	if (buf)
-		FreeVec(buf);
-	if (req)
-		DeleteIORequest((struct IORequest *)req);
-	if (port)
-		DeleteMsgPort(port);
+	if (args[4])
+		Printf("\nClose this window to continue.\n");
+	if (read_stuck) {
+		/* The driver may still fill buf and reply req at any time: closing
+		   the device or freeing them would be unsafe. Leak them, and make a
+		   late reply to the port harmless once this task is gone. */
+		s2_orphan_port(port);
+	} else {
+		close_device();
+		if (buf)
+			FreeVec(buf);
+		if (req)
+			DeleteIORequest((struct IORequest *)req);
+		if (port)
+			DeleteMsgPort(port);
+		if (buffertags)
+			s2buff_free(buffertags);
+	}
 	FreeArgs(rda);
 	return rc;
 }

@@ -36,12 +36,13 @@
 
 #include "../core/dn.h"
 #include "dnserver.h"
+#include "s2buff.h"
 
-#define NREAD   8
+#define NREAD   32      /* a2065.device: VMS bursts of 9+ frames within 25 us */
 #define BUFLEN  1518
 #define TICK_US 100000
 
-static const char version[] = "$VER: dnetd 0.3 (21.10.2026)";
+static const char version[] = "$VER: dnetd 0.4 (23.10.2026)";
 
 struct Device *TimerBase;
 
@@ -54,6 +55,8 @@ static BOOL rawmode;
 static UBYTE mymac[6];
 static ULONG started_secs;
 static const char *logfile;
+static struct TagItem *buffertags;
+static const char *devname = "uaenet.device";
 
 /* All dnetd output goes through here: console or LOG file. */
 static void out(const char *fmt, ...)
@@ -73,30 +76,6 @@ static void out(const char *fmt, ...)
 		PutStr((STRPTR)buf);
 	}
 }
-
-/* ---- SANA-II buffer management ------------------------------------------- */
-
-static BOOL CopyToBuff(register APTR to __asm("a0"),
-                       register APTR from __asm("a1"),
-                       register ULONG n __asm("d0"))
-{
-	CopyMem(from, to, n);
-	return TRUE;
-}
-
-static BOOL CopyFromBuff(register APTR to __asm("a0"),
-                         register APTR from __asm("a1"),
-                         register ULONG n __asm("d0"))
-{
-	CopyMem(from, to, n);
-	return TRUE;
-}
-
-static struct TagItem buffertags[] = {
-	{ S2_CopyToBuff, (ULONG)CopyToBuff },
-	{ S2_CopyFromBuff, (ULONG)CopyFromBuff },
-	{ TAG_DONE, 0 }
-};
 
 /* ---- core environment ---------------------------------------------------- */
 
@@ -238,6 +217,7 @@ static BOOL parse_addr(const char *a, dn_u16 *out)
 
 static void cleanup(void)
 {
+	BOOL stuck = FALSE;
 	int i;
 
 	if (tpending) {
@@ -245,11 +225,14 @@ static void cleanup(void)
 		WaitIO((struct IORequest *)treq);
 		tpending = FALSE;
 	}
+	/* A read the driver does not give back (a2065.device) stays with it
+	   for good: then its request, buffer, port, the hook stub and the
+	   device stay open/allocated, see s2buff.h. */
 	for (i = 0; i < NREAD; i++) {
 		if (rd[i]) {
-			if (!CheckIO((struct IORequest *)rd[i])) {
-				AbortIO((struct IORequest *)rd[i]);
-				WaitIO((struct IORequest *)rd[i]);
+			if (!s2_abort((struct IORequest *)rd[i])) {
+				stuck = TRUE;
+				continue;
 			}
 			DeleteIORequest((struct IORequest *)rd[i]);
 			rd[i] = NULL;
@@ -259,17 +242,20 @@ static void cleanup(void)
 			rbuf[i] = NULL;
 		}
 	}
+	if (stuck)
+		out("dnetd: %s did not give back aborted reads, leaving them with it\n",
+		    (STRPTR)devname);
 	if (wr) {
 		DeleteIORequest((struct IORequest *)wr);
 		wr = NULL;
 	}
-	if (dev_open) {
+	if (dev_open && !stuck) {
 		CloseDevice((struct IORequest *)ctl);
 		dev_open = FALSE;
 	}
 	if (timer_open)
 		CloseDevice((struct IORequest *)treq);
-	if (ctl)
+	if (ctl && !stuck)
 		DeleteIORequest((struct IORequest *)ctl);
 	if (treq)
 		DeleteIORequest((struct IORequest *)treq);
@@ -279,8 +265,14 @@ static void cleanup(void)
 		DeleteMsgPort(tport);
 	if (wport)
 		DeleteMsgPort(wport);
-	if (port)
-		DeleteMsgPort(port);
+	if (stuck) {
+		s2_orphan_port(port);
+	} else {
+		if (port)
+			DeleteMsgPort(port);
+		if (buffertags)
+			s2buff_free(buffertags);
+	}
 }
 
 int main(void)
@@ -288,7 +280,6 @@ int main(void)
 	static const char template[] = "ADDR/A,DEVICE/K,UNIT/K/N,VERBOSE/S,LOG/K";
 	LONG args[5] = { 0, 0, 0, 0, 0 };
 	struct RDArgs *rda;
-	const char *devname = "uaenet.device";
 	LONG unit = 0;
 	dn_u16 addr;
 	struct dn_env env;
@@ -326,7 +317,8 @@ int main(void)
 	ctl = (struct IOSana2Req *)CreateIORequest(port, sizeof(struct IOSana2Req));
 	treq = (struct timerequest *)CreateIORequest(tport, sizeof(struct timerequest));
 	wbuf = AllocVec(BUFLEN, MEMF_ANY);
-	if (!ctl || !treq || !wbuf)
+	buffertags = s2buff_create();
+	if (!ctl || !treq || !wbuf || !buffertags)
 		goto out;
 	if (OpenDevice((STRPTR)TIMERNAME, UNIT_VBLANK, (struct IORequest *)treq, 0) != 0) {
 		out("dnetd: cannot open timer.device\n");
