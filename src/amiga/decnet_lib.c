@@ -306,7 +306,8 @@ static const ULONG inittable[] = {
 	(ULONG)LibInit
 };
 
-const struct Resident romtag = {
+/* ramlib only finds a longword aligned romtag */
+const struct Resident romtag __attribute__((aligned(4))) = {
 	RTC_MATCHWORD,
 	(struct Resident *)&romtag,
 	(APTR)(&romtag + 1),

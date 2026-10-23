@@ -3,6 +3,7 @@
  *
  * Usage: dndir NODE/A,SPEC,USER/K,PASSWORD/K,NOBLOCK/S,VERBOSE/S
  *   SPEC default *.*; NOBLOCK for servers like FOTOFX
+ *   Without USER, USER/PASSWORD/NOBLOCK come from ENV:DECnet/nodes.
  *
  * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
@@ -15,7 +16,7 @@
 
 #include "dapamiga.h"
 
-static const char version[] = "$VER: dndir 0.1 (21.10.2026)";
+static const char version[] = "$VER: dndir 0.2 (23.10.2026)";
 unsigned long __stack = 16384;
 
 static int show(void *ud, const struct dap_dirent *e)

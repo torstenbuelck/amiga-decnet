@@ -17,7 +17,8 @@
 ;
 ; Lines starting with ";" are comments. dnnodes FROM=node UPDATE
 ; appends nodes that another node knows. Used by decnet.library
-; (DnNodeAddr) and DN:.
+; (DnNodeAddr), DN: and the dn tools; USER/PASSWORD on a tool's
+; command line win over the ones here.
 ;
 ; This file is ENVARC:DECnet/nodes; it is copied to ENV:DECnet/nodes
 ; at boot. DN: and the dn tools read only the copy in ENV:. After

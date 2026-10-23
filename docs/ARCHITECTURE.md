@@ -316,6 +316,51 @@ auf echter Hardware nachgetestet):
   in beide Dateien und prüft ENVARC: gegen den eigenen Inhalt (keine
   doppelten Zeilen). Nebenbefund: `DnNodeAddr()` las nur die ersten 4096 Bytes
   der Datei; decnet.library 1.1 liest zeilenweise.
+* **decnet.library 1.1 ließ sich nicht laden** (gefunden 23.10.2026 spät in
+  Amiberry, vor dem Nachtest auf dem A3000): `OpenLibrary()` scheiterte,
+  `Version` las die Datei trotzdem. Die kürzere `DnNodeAddr()` hatte das
+  Romtag auf 0x56e verschoben (1.0: 0x5b0); ramlib findet nur ein auf ein
+  Langwort ausgerichtetes Romtag. Jetzt `__attribute__((aligned(4)))`; gegen
+  die unausgerichtete Fassung per A/B-Test bestätigt. Das Paket aus 770c637
+  (95379 Bytes) ist damit unbrauchbar.
+
+### dncopy PROGRESS (Stand 23.10.2026)
+* `PROGRESS=WINDOW`: Fenster auf dem Workbench-Schirm (nur Intuition/Graphics
+  V37, keine GadTools) mit Knoten samt Adresse, Datei, Schritt, Balken,
+  Bytezähler und KB/s, Vorbild DAPGet auf dem Mac. Bleibt am Ende 1,5 s
+  stehen, mit Fehler 4 s (Text umbrochen). `PROGRESS=TEXT`: eine Shell-Zeile
+  mit `\r`, höchstens 5 Aktualisierungen/s. Für die Ausstellung und den
+  Amiga-FotoFix.
+* Größe aus dem ATTRIB des Servers; ohne sie zählt nur der Bytezähler, das
+  Fenster zeigt ein Lauflicht. Am Ende gilt die tatsächliche Byte-Anzahl als
+  100 %.
+* dncopy liest jetzt schrittweise (`dap_open_read()`/`dap_read_record()`)
+  und wickelt `d->read` in einen Wrapper, der in 250-ms-Stücken wartet: so
+  zählt die Anzeige ab 2 s Wartezeit die Sekunden, und Ctrl-C bzw. das
+  Schließsymbol wirken auch, solange der Server schweigt. Nach einem Abbruch
+  wird der Link nur getrennt; ein ordentliches ACCOMP-Close müsste erst den
+  Rest der Datei empfangen (bei FOTOFX ohne Blocking ~15 s).
+* Getestet in Amiberry gegen FOTOFX: 92 KB, 397 KB, 719 KB (~97 KB/s),
+  nicht vorhandene Datei, Abbruch in beiden Modi, falscher Wert.
+
+### Zugangsdaten aus nodes für alle Tools (Stand 23.10.2026)
+* Bis dndir 0.1, dncopy 0.2 und dnnodes 0.3 kannten nur DN: die Angaben
+  USER/PASSWORD/NOBLOCK aus `ENV:DECnet/nodes`; die Tools brauchten sie auf
+  der Befehlszeile (Passwort sichtbar, z. B. in `Status`).
+* Der Parser steckt jetzt in `src/common/nodecfg.c` (`nc_lookup()`, dazu
+  `nc_ieq`, `nc_parse_addr`, `nc_word`) und wird von dn-handler,
+  `dapamiga.c` (dndir, dncopy) und dnnodes gemeinsam benutzt; keine neue
+  Funktion in decnet.library.
+* Vorrang: USER auf der Befehlszeile bringt sein PASSWORD mit; ohne USER
+  gelten USER und PASSWORD aus nodes (ein PASSWORD allein auf der
+  Befehlszeile ersetzt nur das Passwort). NOBLOCK gilt, wenn es an einer
+  der beiden Stellen steht.
+* PURGE bleibt beim Handler: dndir und dncopy schreiben nicht. Kommt ein
+  Upload in dncopy, bekommt es `PURGE/S` nach demselben Muster.
+* Getestet in Amiberry: `dndir HOWIE`, `dncopy HOWIE …` ohne Zugangsdaten,
+  `dncopy FOTOFX …` ohne NOBLOCK-Schalter, falscher USER auf der
+  Befehlszeile → „access denied“, `dnnodes FROM=HOWIE`, DN: (Wurzel mit
+  SHOW, Listing, Kopieren).
 
 ### Knotennamen per NML (Stand 22.10.2026)
 * DECnet Phase IV hat keinen Namensdienst, Hellos tragen keine Namen.

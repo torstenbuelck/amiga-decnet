@@ -43,6 +43,7 @@
 #include <string.h>
 
 #include "../dap/dap.h"
+#include "../common/nodecfg.h"
 
 struct ExecBase *SysBase;
 struct DosLibrary *DOSBase;
@@ -110,18 +111,6 @@ static void dap_logger(void *ctx, const char *msg)
 
 /* ---- helpers ---------------------------------------------------------------- */
 
-static int ieq(const char *a, const char *b)
-{
-	for (; *a && *b; a++, b++) {
-		char x = *a, y = *b;
-		if (x >= 'a' && x <= 'z') x -= 32;
-		if (y >= 'a' && y <= 'z') y -= 32;
-		if (x != y)
-			return 0;
-	}
-	return *a == *b;
-}
-
 /* a begins with the n characters of b, case ignored */
 static int iprefix(const char *a, const char *b, int n)
 {
@@ -184,36 +173,6 @@ static LONG num(const char **pp)
 	return v;
 }
 
-/* "area.node" -> address, 0 if not a node address */
-static UWORD parse_addr(const char *s)
-{
-	LONG a, n;
-
-	if ((a = num(&s)) < 1 || a > 63 || *s++ != '.' || (n = num(&s)) < 1 || n > 1023 || *s)
-		return 0;
-	return (UWORD)(a << 10 | n);
-}
-
-/* next blank separated word of *pp into out; FALSE if none */
-static BOOL word(const char **pp, char *out, int size)
-{
-	const char *p = *pp;
-	int n = 0;
-
-	while (*p == ' ' || *p == '\t')
-		p++;
-	if (!*p || *p == '\n' || *p == '\r')
-		return FALSE;
-	while (*p && *p != ' ' && *p != '\t' && *p != '\n' && *p != '\r') {
-		if (n < size - 1)
-			out[n++] = *p;
-		p++;
-	}
-	out[n] = 0;
-	*pp = p;
-	return TRUE;
-}
-
 /* "17-OCT-26 21:44:34" or "17-OCT-2026 21:44:34" -> DateStamp */
 static void parse_date(const char *s, struct DateStamp *ds)
 {
@@ -242,7 +201,7 @@ static void parse_date(const char *s, struct DateStamp *ds)
 		char x[4];
 		memcpy(x, months + 3 * i, 3);
 		x[3] = 0;
-		if (ieq(mon, x))
+		if (nc_ieq(mon, x))
 			m = i;
 	}
 	if (m < 0)
@@ -262,86 +221,7 @@ static void parse_date(const char *s, struct DateStamp *ds)
 	ds->ds_Tick = ss * TICKS_PER_SECOND;
 }
 
-/* ---- node table ------------------------------------------------------------------ */
-
-struct nodecfg {
-	char name[24];
-	UWORD addr;
-	char user[40], pass[40];
-	int noblock;
-	int purge;                  /* delete older versions after writing */
-	int show;                   /* listed in the DN: root */
-};
-
-/* Words after the address: USER name, PASSWORD word, NOBLOCK, PURGE,
-   SHOW, in any order. The keywords keep a user or password that happens
-   to read SHOW from being taken for an option. Unknown words are skipped. */
-static void parse_opts(char f[][40], int n, struct nodecfg *cfg)
-{
-	int k;
-
-	for (k = 2; k < n; k++) {
-		if (ieq(f[k], "USER") && k + 1 < n)
-			strcpy(cfg->user, f[++k]);
-		else if (ieq(f[k], "PASSWORD") && k + 1 < n)
-			strcpy(cfg->pass, f[++k]);
-		else if (ieq(f[k], "NOBLOCK"))
-			cfg->noblock = 1;
-		else if (ieq(f[k], "PURGE"))
-			cfg->purge = 1;
-		else if (ieq(f[k], "SHOW"))
-			cfg->show = 1;
-	}
-}
-
-/* Fill cfg for name (name may also be "23.208"). Returns FALSE if unknown.
-   With list != NULL, calls list(name, show) for every node instead. */
-static BOOL nodes(const char *name, struct nodecfg *cfg, void (*list)(const char *, int, void *),
-                  void *ud)
-{
-	char line[200], f[10][40];   /* name, address, then USER x PASSWORD y options */
-	struct nodecfg tmp;
-	BPTR fh;
-	BOOL found = FALSE;
-	UWORD addr;
-
-	if (name && (addr = parse_addr(name)) != 0) {
-		memset(cfg, 0, sizeof *cfg);
-		strncpy(cfg->name, name, sizeof cfg->name - 1);
-		cfg->addr = addr;
-		found = TRUE;               /* still look for access data */
-	}
-	fh = Open((STRPTR)"ENV:DECnet/nodes", MODE_OLDFILE);
-	if (!fh)
-		return found;
-	while (FGets(fh, (STRPTR)line, sizeof line)) {
-		const char *p = line;
-		int k;
-		if (line[0] == ';' || line[0] == '#')
-			continue;
-		memset(f, 0, sizeof f);
-		for (k = 0; k < 10 && word(&p, f[k], sizeof f[k]); k++)
-			;
-		if (k < 2 || (addr = parse_addr(f[1])) == 0)
-			continue;
-		if (list) {
-			memset(&tmp, 0, sizeof tmp);
-			parse_opts(f, k, &tmp);
-			list(f[0], tmp.show, ud);
-			continue;
-		}
-		if (!ieq(f[0], name) && !(found && cfg->addr == addr))
-			continue;
-		memset(cfg, 0, sizeof *cfg);
-		strncpy(cfg->name, f[0], sizeof cfg->name - 1);
-		cfg->addr = addr;
-		parse_opts(f, k, cfg);
-		found = TRUE;
-		break;
-	}
-	Close(fh);
-	return found;
-}
+/* ---- node table: src/common/nodecfg.c ------------------------------------------- */
 
 /* ---- DAP connections -------------------------------------------------------------- */
 
@@ -661,7 +541,7 @@ static BOOL ends(const char *s, const char *ext)
 {
 	int n = strlen(s), m = strlen(ext);
 
-	return n > m && ieq(s + n - m, ext);
+	return n > m && nc_ieq(s + n - m, ext);
 }
 
 /* Icon for a listing entry, by type and name extension. */
@@ -707,7 +587,7 @@ static void add_icons(struct dirlist *l, int root)
 				char base[108];
 				memcpy(base, l->e[i].name, len - 5);
 				base[len - 5] = 0;
-				if (ieq(base, l->e[j].name))
+				if (nc_ieq(base, l->e[j].name))
 					l->e[j].icon = -1;
 			}
 	}
@@ -731,15 +611,15 @@ static int icon_of(const char *path)
 	struct nodecfg cfg;
 	int n = strlen(path);
 
-	if (strchr(path, '/') || n < 6 || !ieq(path + n - 5, ".info"))
+	if (strchr(path, '/') || n < 6 || !nc_ieq(path + n - 5, ".info"))
 		return -1;
-	if (ieq(path, "Disk.info"))
+	if (nc_ieq(path, "Disk.info"))
 		return icon_load(ICON_DISK) ? ICON_DISK : -1;
 	if (n - 5 >= (int)sizeof node)
 		return -1;
 	memcpy(node, path, n - 5);
 	node[n - 5] = 0;
-	if (!nodes(node, &cfg, NULL, NULL) || parse_addr(node))
+	if (!nc_lookup(node, &cfg, NULL, NULL) || nc_parse_addr(node))
 		return -1;
 	return icon_load(ICON_NODE) ? ICON_NODE : -1;
 }
@@ -807,7 +687,7 @@ static int add_entry(void *ud, const struct dap_dirent *de)
 	strcpy(name, de->name);
 	if ((p = strchr(name, ';')) != NULL)            /* drop the version */
 		*p = 0;
-	if ((p = strrchr(name, '.')) != NULL && ieq(p, ".DIR")) {
+	if ((p = strrchr(name, '.')) != NULL && nc_ieq(p, ".DIR")) {
 		*p = 0;
 		isdir = 1;
 	}
@@ -830,7 +710,7 @@ static struct dirlist *get_list(const char *path)
 
 	for (i = 0; i < NCACHE; i++) {
 		l = cache[i];
-		if (l && ieq(l->path, path) && now - l->when < CACHE_TICKS)
+		if (l && nc_ieq(l->path, path) && now - l->when < CACHE_TICKS)
 			return l;
 	}
 	l = AllocVec(sizeof *l, MEMF_ANY | MEMF_CLEAR);
@@ -841,7 +721,7 @@ static struct dirlist *get_list(const char *path)
 	if (!path[0]) {
 		LONG j, n = 0;
 
-		nodes(NULL, NULL, add_node, l);
+		nc_lookup(NULL, NULL, add_node, l);
 		for (j = 0; j < l->n; j++)              /* any SHOW at all? */
 			if (l->e[j].size)
 				n++;
@@ -857,7 +737,7 @@ static struct dirlist *get_list(const char *path)
 		add_icons(l, 1);
 	} else {
 		path_node(path, node);
-		if (!nodes(node, &cfg, NULL, NULL)) {
+		if (!nc_lookup(node, &cfg, NULL, NULL)) {
 			l->error = ERROR_OBJECT_NOT_FOUND;
 		} else if ((l->error = conn_open(&c, &cfg)) == 0) {
 			remote_spec(path, 1, spec);
@@ -900,7 +780,7 @@ static void list_changed(const char *path)
 	if ((s = strrchr(parent, '/')) != NULL)
 		*s = 0;
 	for (i = 0; i < NCACHE; i++)
-		if (cache[i] && (ieq(cache[i]->path, path) || ieq(cache[i]->path, parent)))
+		if (cache[i] && (nc_ieq(cache[i]->path, path) || nc_ieq(cache[i]->path, parent)))
 			cache[i]->when = ticks() - CACHE_TICKS - 1;
 	fc_forget(path);
 }
@@ -966,7 +846,7 @@ static struct fcache *fc_get(const char *path)
 
 	fc_expire();
 	for (i = 0; i < NFCACHE; i++)
-		if (fcache[i] && ieq(fcache[i]->path, path))
+		if (fcache[i] && nc_ieq(fcache[i]->path, path))
 			return fcache[i];
 	return NULL;
 }
@@ -1005,7 +885,7 @@ static void fc_forget(const char *path)
 	int i, n = strlen(path);
 
 	for (i = 0; i < NFCACHE; i++)
-		if (fcache[i] && (ieq(fcache[i]->path, path) ||
+		if (fcache[i] && (nc_ieq(fcache[i]->path, path) ||
 		    ((int)strlen(fcache[i]->path) > n && fcache[i]->path[n] == '/' &&
 		     iprefix(fcache[i]->path, path, n))))
 			fc_drop(i);
@@ -1076,7 +956,7 @@ static LONG lookup(const char *path, int *isdir, struct dent *info)
 		*isdir = 1;
 		if (path[0]) {                          /* a node */
 			path_node(path, node);
-			if (!nodes(node, &cfg, NULL, NULL))
+			if (!nc_lookup(node, &cfg, NULL, NULL))
 				return ERROR_OBJECT_NOT_FOUND;
 		}
 		strncpy(info->name, path[0] ? path : VOLNAME, sizeof info->name - 1);
@@ -1089,7 +969,7 @@ static LONG lookup(const char *path, int *isdir, struct dent *info)
 	l = get_list(parent);
 	if (l && !l->error) {
 		for (i = 0; i < l->n; i++)
-			if (ieq(l->e[i].name, name)) {
+			if (nc_ieq(l->e[i].name, name)) {
 				*info = l->e[i];
 				*isdir = info->isdir;
 				return 0;
@@ -1116,7 +996,7 @@ static LONG lookup(const char *path, int *isdir, struct dent *info)
 		LONG err;
 
 		path_node(path, node);
-		if (!nodes(node, &cfg, NULL, NULL))
+		if (!nc_lookup(node, &cfg, NULL, NULL))
 			return ERROR_OBJECT_NOT_FOUND;
 		if ((err = conn_open(&c, &cfg)) != 0)
 			return err;
@@ -1633,7 +1513,7 @@ static LONG do_findinput(struct DosPacket *pkt, LONG *err)
 		return DOSTRUE;
 	}
 	path_node(path, node);
-	if (!nodes(node, &f->cfg, NULL, NULL)) {
+	if (!nc_lookup(node, &f->cfg, NULL, NULL)) {
 		FreeVec(f);
 		*err = ERROR_OBJECT_NOT_FOUND;
 		return DOSFALSE;
@@ -1729,7 +1609,7 @@ static BOOL from_shell(struct DosPacket *pkt)
 	dlog("sender '%s', command '%s'", name, cmd);
 	if (strchr(cmd, ':') && !strchr(cmd, '/'))
 		strcpy(cmd, strchr(cmd, ':') + 1);
-	return !ieq(name, "Workbench") && !ieq(path_last(cmd), "Workbench");
+	return !nc_ieq(name, "Workbench") && !nc_ieq(path_last(cmd), "Workbench");
 }
 
 static LONG do_findoutput(struct DosPacket *pkt, struct FileHandle *fh, struct mylock *base,
@@ -1785,7 +1665,7 @@ static LONG do_findoutput(struct DosPacket *pkt, struct FileHandle *fh, struct m
 	strncpy(f->info.name, path_last(path), sizeof f->info.name - 1);
 	DateStamp(&f->info.date);
 	path_node(path, node);
-	if (!nodes(node, &f->cfg, NULL, NULL))
+	if (!nc_lookup(node, &f->cfg, NULL, NULL))
 		*err = ERROR_OBJECT_NOT_FOUND;
 	else
 		*err = conn_open(&f->c, &f->cfg);   /* login errors show up now */
@@ -1822,7 +1702,7 @@ static LONG remote_op(const char *path, const char *spec, const char *newspec)
 	int r;
 
 	path_node(path, node);
-	if (!nodes(node, &cfg, NULL, NULL))
+	if (!nc_lookup(node, &cfg, NULL, NULL))
 		return ERROR_OBJECT_NOT_FOUND;
 	memset(&tmp, 0, sizeof tmp);
 	if ((err = conn_open(&tmp.c, &cfg)) != 0)
@@ -1891,7 +1771,7 @@ static LONG do_rename(struct DosPacket *pkt, LONG *err)
 	}
 	path_node(from, node1);
 	path_node(to, node2);
-	if (!ieq(node1, node2)) {
+	if (!nc_ieq(node1, node2)) {
 		*err = ERROR_RENAME_ACROSS_DEVICES;
 		return DOSFALSE;
 	}
@@ -1899,7 +1779,7 @@ static LONG do_rename(struct DosPacket *pkt, LONG *err)
 		return DOSFALSE;
 	if (info.icon > 0)                      /* a virtual icon follows its file */
 		return DOSTRUE;
-	if (ieq(from, to))                      /* VMS names have no case */
+	if (nc_ieq(from, to))                      /* VMS names have no case */
 		return DOSTRUE;
 	/* a virtual icon at the target gives way to a real one */
 	if (lookup(to, &isdir2, &info2) == 0 && info2.icon <= 0) {
@@ -2043,7 +1923,7 @@ void handler_main(void)
 			break;
 		case ACTION_SAME_LOCK: {
 			struct mylock *a = lock_of(pkt->dp_Arg1), *b = lock_of(pkt->dp_Arg2);
-			res1 = (a && b && ieq(a->path, b->path)) ? DOSTRUE : DOSFALSE;
+			res1 = (a && b && nc_ieq(a->path, b->path)) ? DOSTRUE : DOSFALSE;
 			break;
 		}
 		case ACTION_EXAMINE_OBJECT:

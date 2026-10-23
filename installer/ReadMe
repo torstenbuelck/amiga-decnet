@@ -75,6 +75,10 @@ For example:
 
   VAX1    1.10   USER guest PASSWORD secret PURGE SHOW
 
+DN:, dndir, dncopy and dnnodes take USER, PASSWORD and NOBLOCK from
+here. USER and PASSWORD given on their command line win; NOBLOCK
+counts when it is in either place.
+
 Where to edit: as with all AmigaOS settings, DN: and the programs read
 only ENV:DECnet/nodes, the copy in RAM that DECnet-Start makes from
 ENVARC:DECnet/nodes at boot.
@@ -104,6 +108,9 @@ Using it
   Copy RAM:test.txt DN:VAX1/        copy a file to VAX1
   dndir VAX1 [GUEST]*.*             directory listing in VMS syntax
   dncopy VAX1 TEST.TXT RAM:test.txt
+  dncopy VAX1 BIG.DAT RAM:big.dat PROGRESS=WINDOW
+                                    with a progress window (TEXT: a
+                                    progress line in the Shell)
 
 Subdirectories are drawers: DN:VAX1/A/B is [.A.B]. DN: shows its own
 disk icon, an icon for every node and, inside a node, an icon for every

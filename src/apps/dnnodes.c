@@ -35,8 +35,9 @@
 #include <string.h>
 
 #include "../nml/nml.h"
+#include "../common/nodecfg.h"
 
-static const char version[] = "$VER: dnnodes 0.3 (23.10.2026)";
+static const char version[] = "$VER: dnnodes 0.4 (23.10.2026)";
 unsigned long __stack = 16384;
 
 #define MAXNODES 1024
@@ -241,6 +242,7 @@ int main(void)
 	LONG args[7] = { 0, 0, 0, 0, 0, 0, 0 };
 	const char *from, *file;
 	struct DnConnectReq req;
+	struct nodecfg cfg;
 	struct RDArgs *rda;
 	struct nml *n = NULL;
 	char *buf = NULL;
@@ -281,8 +283,17 @@ int main(void)
 	req.dcr_Node = (UWORD)addr;
 	req.dcr_ObjNum = NML_OBJECT;
 	req.dcr_SrcName = (CONST_STRPTR)"DNNODES";
-	req.dcr_User = (CONST_STRPTR)args[4];
-	req.dcr_Password = (CONST_STRPTR)args[5];
+	/* access data from ENV:DECnet/nodes unless USER is given */
+	memset(&cfg, 0, sizeof cfg);
+	nc_lookup(from, &cfg, NULL, NULL);
+	if (args[4]) {
+		req.dcr_User = (CONST_STRPTR)args[4];
+		req.dcr_Password = (CONST_STRPTR)args[5];
+	} else {
+		req.dcr_User = cfg.user[0] ? (CONST_STRPTR)cfg.user : NULL;
+		req.dcr_Password = args[5] ? (CONST_STRPTR)args[5] :
+		                   cfg.pass[0] ? (CONST_STRPTR)cfg.pass : NULL;
+	}
 	req.dcr_Flags = DCRF_DATA;
 	req.dcr_Data = nml_version;
 	req.dcr_DataLen = sizeof nml_version;
