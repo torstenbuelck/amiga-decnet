@@ -1,0 +1,23 @@
+# build results (make in src/*, dnhello, s2dump; tools/mkdist.sh)
+/src/amiga/dnetd
+/src/amiga/decnet.library
+/src/amiga/dncheck
+/src/amiga/dnstartup
+/src/apps/dndir
+/src/apps/dncopy
+/src/apps/dnnodes
+/src/handler/dn-handler
+/src/linux/dnhost
+/src/linux/dntool
+/dnhello/dnhello
+/s2dump/s2dump
+/dist/
+__pycache__/
+
+# logs and network captures (captures hold DECnet logins in clear text)
+*.log
+/script.out
+/captures/
+
+# the local node list with user names and passwords
+/config/nodes

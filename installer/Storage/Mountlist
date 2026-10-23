@@ -1,0 +1,9 @@
+/* DN: - files on DECnet nodes (dn-handler). Mounted by DECnet:S/DECnet-Start */
+DN:
+	Handler   = DECnet:L/dn-handler
+	Stacksize = 16384
+	Priority  = 5
+	GlobVec   = -1
+	Startup   = ""
+	Mount     = 1
+#

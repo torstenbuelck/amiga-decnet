@@ -1,0 +1,115 @@
+DECnet for the Amiga
+====================
+
+A DECnet Phase IV endnode for AmigaOS 2.04 and newer, 68000 and up.
+The Amiga becomes a node in a DECnet network with VAX/VMS, PDP-11 or
+other DECnet systems: it fetches and stores files on them (DAP/FAL),
+answers NCP LOOP NODE, and shows their files as a disk named DN:.
+
+
+Requirements
+------------
+- AmigaOS 2.04 (V37) or newer, any 68k CPU
+- an Ethernet card with a SANA-II driver (e.g. A2065), the same driver
+  AmiTCP or Roadshow use
+- a DECnet address (area.node) that is free in your network
+
+
+Installation
+------------
+Double-click "Install-DECnet". It asks for the DECnet address and name
+of this Amiga and the network driver, tests the card with dncheck,
+copies the files and adds DECnet to S:User-Startup, in front of your
+TCP/IP software. From the Shell: cd to this drawer, then
+
+  Installer Install-DECnet MINUSER AVERAGE
+
+DECnet must start before TCP/IP: a SANA-II card is configured only once
+per boot, and DECnet needs the Ethernet address AA-00-04-00-xx-xx that
+follows from its DECnet address. TCP/IP then uses this address as well;
+if your DHCP server hands out a fixed IP address by Ethernet address,
+change that entry. Reboot after the installation.
+
+AmigaOS 2.04 has no Installer and no LhA. Get them from Aminet first:
+util/misc/Installer-43_3.lha (copy Installer to C:) and util/arc/lha.run
+(run it, copy lha_68k to C:LhA). On 2.04 the text icons open More;
+pictures need a viewer of your own (MultiView comes with OS 3.0).
+
+To remove DECnet, start Install-DECnet again and choose "Remove".
+
+
+What goes where
+---------------
+  DECnet/C/dnetd           the DECnet stack (started by DECnet-Start)
+  DECnet/C/dncopy          copy a file from a node
+  DECnet/C/dndir           list a directory on a node
+  DECnet/C/dnnodes         copy node names from another node (NML)
+  DECnet/C/dncheck         test a network card for DECnet
+  DECnet/C/dnstartup       adds/removes DECnet in S:User-Startup
+  DECnet/L/dn-handler      the DN: file system
+  DECnet/S/DECnet-Start    sets up DECnet:, DN: and starts dnetd
+  DECnet/S/DECnet-Stop     stops dnetd
+  DECnet/Storage/Mountlist mount entry for DN:
+  DECnet/Icons             icons DN: shows for itself and the nodes
+  LIBS:decnet.library      used by the programs above
+  ENVARC:DECnet/nodes      your node list
+
+
+The node list
+-------------
+DECnet has no name service, so every node keeps a list of names and
+addresses. Yours is ENVARC:DECnet/nodes, one node per line:
+
+  NAME  ADDRESS  [keyword ...]
+
+  USER name      user name for files on that node (omit: none)
+  PASSWORD word  password for that user (omit: none)
+  NOBLOCK        don't offer DAP blocking (some servers need this)
+  PURGE          DN: deletes older VMS versions of a file after
+                 writing it; without it they are kept
+  SHOW           node appears as a drawer in DN:; if no node has
+                 SHOW, all nodes appear. Others stay reachable by
+                 name (DN:NODE).
+
+For example:
+
+  VAX1    1.10   USER guest PASSWORD secret PURGE SHOW
+
+ENVARC:DECnet/nodes is copied to ENV:DECnet/nodes at boot; after
+editing it, copy it there too (or reboot).
+
+To take the names another node knows (like NCP COPY KNOWN NODES):
+
+  dnnodes FROM=area.node REACHABLE UPDATE
+
+REACHABLE leaves out the nodes that node cannot reach right now. New
+names are added at the end; existing lines are never changed.
+
+
+Using it
+--------
+  List DN:VAX1                      the login directory on VAX1
+  Copy DN:VAX1/LOGIN.COM RAM:       copy a file from VAX1
+  Copy RAM:test.txt DN:VAX1/        copy a file to VAX1
+  dndir VAX1 [GUEST]*.*             directory listing in VMS syntax
+  dncopy VAX1 TEST.TXT RAM:test.txt
+
+Subdirectories are drawers: DN:VAX1/A/B is [.A.B]. DN: shows its own
+disk icon, an icon for every node and, inside a node, an icon for every
+file and directory, chosen by the file's extension (text, picture or
+other file). These icons are made up by DN:; nothing is written to the
+node. Icons the Workbench saves there (Information, Snapshot, dragging
+a file) are dropped. To give a file a real icon on the node, copy one
+in the Shell:
+
+  Copy MyIcon.info DN:VAX1/PICTURE.IFF.info
+
+The icons DN: uses are in DECnet/Icons; you may replace them.
+
+
+Licence
+-------
+GNU General Public License, version 2 or later. Parts are based on
+the Linux DECnet code and dnprogs.
+
+Copyright (C) 2026  Torsten

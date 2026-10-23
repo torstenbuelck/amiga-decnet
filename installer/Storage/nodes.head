@@ -1,0 +1,24 @@
+; DECnet node names, one node per line:
+;
+;   NAME  ADDRESS  [keyword ...]
+;
+; NAME           node name, as used in DN:NAME and by the dn tools
+; ADDRESS        area.node (area 1-63, node 1-1023)
+;
+; Keywords after the address, in any order:
+; USER name      user name for files on the node (omit: none)
+; PASSWORD word  password for that user (omit: none)
+; NOBLOCK        don't offer DAP blocking (some servers need it)
+; PURGE          DN: deletes older VMS versions of a file after
+;                writing it; without it they are kept
+; SHOW           node appears as a drawer in DN:; if no node has
+;                SHOW, all nodes appear. Others stay reachable by
+;                name (DN:NAME).
+;
+; Lines starting with ";" are comments. dnnodes FROM=node UPDATE
+; appends nodes that another node knows. Used by decnet.library
+; (DnNodeAddr) and DN:.
+;
+; This file is ENVARC:DECnet/nodes; it is copied to ENV:DECnet/nodes
+; at boot. After editing it, copy it to ENV:DECnet/nodes as well (or
+; reboot). DN: and the dn tools read the copy in ENV:.

@@ -1,0 +1,39 @@
+.key ADDR/K,UNIT/K,DEVICE/K
+.bra {
+.ket }
+.def ADDR 23.202
+.def UNIT 2
+.def DEVICE uaenet.device
+; DECnet-Start - set up DECnet and start dnetd (AmigaOS 2.04+)
+; Usage: Execute DECnet-Start [ADDR=area.node] [UNIT=n] [DEVICE=name]
+; Defaults: AMI 23.202 on uaenet.device unit 2 (Amiberry tap0).
+; dnetd log: T:dnetd.log
+
+Assign >NIL: DECnet: Transfer:DECnet
+
+; once per boot: library path, commands, node names
+If NOT EXISTS ENV:DECnet/setup-done
+  Assign LIBS: DECnet:src/amiga ADD
+  Path DECnet:src/amiga DECnet:src/apps ADD
+  If NOT EXISTS ENV:DECnet
+    MakeDir ENV:DECnet
+  EndIf
+  Echo >ENV:DECnet/setup-done "1"
+EndIf
+Copy DECnet:config/nodes ENV:DECnet/nodes QUIET
+
+; DN: file system (dn-handler), mounted once
+If NOT EXISTS ENV:DECnet/dn-mounted
+  Mount DN: FROM DECnet:config/Mountlist
+  Echo >ENV:DECnet/dn-mounted "1"
+EndIf
+
+Status >NIL: COMMAND=dnetd
+If WARN
+  ; started by its bare name, so that "Status COMMAND=dnetd" finds it
+  Run >NIL: dnetd ADDR={ADDR} UNIT={UNIT} DEVICE={DEVICE} LOG=T:dnetd.log
+  Wait 2
+  Echo "DECnet node {ADDR} started (log: T:dnetd.log)"
+Else
+  Echo "dnetd is already running"
+EndIf

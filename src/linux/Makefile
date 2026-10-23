@@ -1,0 +1,15 @@
+CC = gcc
+CFLAGS = -O2 -g -Wall -Wextra -std=gnu99
+CORE = ../core/routing.c ../core/nsp.c ../core/mirror.c
+HDRS = ../core/dn.h ../core/dn_priv.h dnenv.h
+
+all: dnhost dntool
+
+dnhost: dnhost.c dnenv.c $(CORE) $(HDRS)
+	$(CC) $(CFLAGS) -o $@ dnhost.c dnenv.c $(CORE)
+
+dntool: dntool.c dnenv.c ../dap/dap.c ../dap/dap.h ../nml/nml.c ../nml/nml.h $(CORE) $(HDRS)
+	$(CC) $(CFLAGS) -o $@ dntool.c dnenv.c ../dap/dap.c ../nml/nml.c $(CORE)
+
+clean:
+	rm -f dnhost dntool

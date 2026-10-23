@@ -1,0 +1,9 @@
+; DECnet-Stop - stop dnetd (open links get a disconnect)
+; Usage: Execute DECnet-Stop
+Status >NIL: COMMAND=dnetd
+If WARN
+  Echo "dnetd is not running"
+Else
+  Break `Status COMMAND=dnetd` C
+  Echo "dnetd stopped"
+EndIf

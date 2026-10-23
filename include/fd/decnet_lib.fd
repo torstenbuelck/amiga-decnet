@@ -1,0 +1,14 @@
+* "decnet.library"
+* Automatically generated FD (sfdc 1.12)! Do not edit!
+##base _DECnetBase
+##bias 30
+##public
+* decnet.library - DECnet Phase IV logical links for AmigaOS
+ Copyright (C) 2026  Torsten, GPL-2.0-or-later
+DnConnect(req)(a0)
+DnRead(link,buffer,length,timeout)(a0,a1,d0,d1)
+DnWrite(link,buffer,length)(a0,a1,d0)
+DnClose(link)(a0)
+DnLinkReason(link)(a0)
+DnNodeAddr(name)(a0)
+##end

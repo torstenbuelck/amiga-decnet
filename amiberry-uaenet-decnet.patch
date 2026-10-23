@@ -1,0 +1,121 @@
+diff --git a/src/sana2.cpp b/src/sana2.cpp
+index 138b869..59e472f 100644
+--- a/src/sana2.cpp
++++ b/src/sana2.cpp
+@@ -21,6 +21,7 @@
+ #include "execlib.h"
+ #include "native2amiga.h"
+ #include "sana2.h"
++#include <cstdlib>
+ #if defined(_WIN32) && defined(WITH_UAENET_PCAP)
+ #include "win32_uaenet.h"
+ #else
+@@ -207,6 +208,13 @@ struct s2devstruct {
+ 	int flush_timeout;
+ 	int flush_timeout_cnt;
+ 	TrapContext *ctx;
++	/* packet types somebody has issued CMD_READ for (bitmap), 802.3 length
++	   field readers, S2_READORPHAN readers: frames nobody can ever want are
++	   dropped at once instead of blocking the read queue for
++	   DELAYED_DROPPED_PACKET_FRAMES */
++	uae_u8 readtypes[65536 / 8];
++	int lenreaders;
++	int orphanreaders;
+ };
+ 
+ #define FLUSH_TIMEOUT 20
+@@ -310,6 +318,10 @@ static uae_u32 REGPARAM2 dev_close_2 (TrapContext *ctx)
+ 	dev->opencnt--;
+ 	if (!dev->opencnt) {
+ 		dev->exclusive = 0;
++		dev->promiscuous = 0;
++		memset(dev->readtypes, 0, sizeof dev->readtypes);
++		dev->lenreaders = 0;
++		dev->orphanreaders = 0;
+ 		ethernet_close (pdev->td, dev->sysdata);
+ 		xfree (dev->sysdata);
+ 		dev->sysdata = NULL;
+@@ -463,6 +475,9 @@ static uae_u32 REGPARAM2 dev_open_2 (TrapContext *ctx)
+ 		}
+ 		write_log (_T("%s: initializing unit %d\n"), getdevname (), unit);
+ 		dev->td = pdev->td;
++		/* SANA2OPF_PROM is only accepted for the first opener (see above),
++		   so it applies to the whole unit until all instances are closed. */
++		dev->promiscuous = pdev->promiscuous;
+ 		dev->adapter = pdev->td ? pdev->td->active : 0;
+ 		if (dev->adapter) {
+ 			dev->online = 1;
+@@ -947,9 +962,19 @@ static void uaenet_gotdata (void *devv, const uae_u8 *d, int len)
+ 	if (isbroadcast (d) && !memcmp (d + 6, dev->td->mac, ADDR_SIZE))
+ 		return;
+ 	/* drop if not promiscuous and dst != broadcast and dst != me */
+-	if (!dev->promiscuous && !isbroadcast (d) && memcmp (d, dev->td->mac, ADDR_SIZE))
++	if (!dev->promiscuous && !isbroadcast (d) && !ismulticast (d) && memcmp (d, dev->td->mac, ADDR_SIZE))
+ 		return;
+ 
++	/* drop multicasts nobody registered (S2_ADDMULTICASTADDRESS) */
++	if (!dev->promiscuous && ismulticast (d)) {
++		uae_u64 mac64 = addrto64(d);
++		struct mcast *mc = dev->mc;
++		while (mc && !(mac64 >= mc->start && mac64 <= mc->end))
++			mc = mc->next;
++		if (!mc)
++			return;
++	}
++
+ 	type = (d[12] << 8) | d[13];
+ 	s2p = createreadpacket (dev, d, len);
+ 	if (log_net)
+@@ -1144,12 +1169,17 @@ static int dev_do_io_2 (TrapContext *ctx, struct s2devstruct *dev, uae_u8 *reque
+ 	case CMD_READ:
+ 		if (!dev->online)
+ 			goto offline;
++		if (packettype <= 1500)
++			dev->lenreaders = 1;
++		else if (packettype < 65536)
++			dev->readtypes[packettype >> 3] |= 1 << (packettype & 7);
+ 		async = 1;
+ 		break;
+ 
+ 	case S2_READORPHAN:
+ 		if (!dev->online)
+ 			goto offline;
++		dev->orphanreaders = 1;
+ 		async = 1;
+ 		break;
+ 
+@@ -1270,6 +1300,13 @@ static int dev_do_io_2 (TrapContext *ctx, struct s2devstruct *dev, uae_u8 *reque
+ 			io_error = S2ERR_BAD_STATE;
+ 			wire_error = S2WERR_IS_CONFIGURED;
+ 		} else {
++			const uae_u8 *srcaddr = request + 32 + 4 + 4;
++			static const uae_u8 zero[ADDR_SIZE] = { 0 };
++			if (memcmp(srcaddr, zero, ADDR_SIZE) && !(srcaddr[0] & 1)) {
++				memcpy(dev->td->mac, srcaddr, ADDR_SIZE);
++				write_log(_T("%s:%d station address set to %02X:%02X:%02X:%02X:%02X:%02X\n"),
++					SANA2NAME, dev->unit, srcaddr[0], srcaddr[1], srcaddr[2], srcaddr[3], srcaddr[4], srcaddr[5]);
++			}
+ 			dev->configured = TRUE;
+ 		}
+ 		break;
+@@ -1704,7 +1741,9 @@ static int uaenet_int_handler2(TrapContext *ctx)
+ 					}
+ 					ar = ar->next;
+ 				}
+-				if (p->drop_start == 0 || p->drop_count - p->drop_start < DELAYED_DROPPED_PACKET_FRAMES) {
++				bool wanted = dev->orphanreaders ||
++					(type <= 1500 ? dev->lenreaders : (dev->readtypes[type >> 3] & (1 << (type & 7))) != 0);
++				if (wanted && (p->drop_start == 0 || p->drop_count - p->drop_start < DELAYED_DROPPED_PACKET_FRAMES)) {
+ 					// we got packet but there was no readers, lets wait a bit before dropping it.
+ 					if (log_net && p->drop_start == 0) {
+ 						write_log(_T("-> %s No readers, queued for dropping\n"), dumphead(p->data, p->len));
+@@ -1864,6 +1903,9 @@ static void uaenet_vsync(void)
+ 
+ static void dev_reset (void)
+ {
++	/* debug aid: AMIBERRY_LOG_NET=1 logs every uaenet.device packet (needs --log) */
++	if (getenv("AMIBERRY_LOG_NET"))
++		log_net = 1;
+ 	write_log (_T("%s reset\n"), getdevname());
+ 	for (int i = 0; i < MAX_TOTAL_NET_DEVICES; i++) {
+ 		if (td[i] && td[i]->active) {

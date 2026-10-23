@@ -1,0 +1,430 @@
+; $VER: Install-DECnet 0.1 (23.10.2026)
+;
+; Installer script for the Amiga DECnet Phase IV endnode stack.
+; Needs the Commodore Installer (V43 recommended) and AmigaOS 2.04.
+;
+; Installs:
+;   <drawer>/DECnet/C        dnetd, dncheck, dncopy, dndir, dnnodes, dnstartup
+;   <drawer>/DECnet/L        dn-handler (the DN: file system)
+;   <drawer>/DECnet/S        DECnet-Start, DECnet-Stop
+;   <drawer>/DECnet/Storage  Mountlist for DN:
+;   LIBS:decnet.library
+;   ENVARC:DECnet/nodes      node names (kept if it already exists)
+;   S:User-Startup           block that starts DECnet before TCP/IP
+;
+; Copyright (C) 2026  Torsten
+; SPDX-License-Identifier: GPL-2.0-or-later
+
+(set #version "0.1")
+(set @app-name "DECnet")
+(set @default-dest "SYS:")
+
+(if (< (/ (getversion) 65536) 37)
+	(abort "DECnet needs AmigaOS 2.04 (V37) or newer.")
+)
+
+; ---------------------------------------------------------------- helpers
+
+; #addr must be "area.node", area 1-63, node 1-1023. Sets #addr-ok.
+(procedure P_CHECKADDR
+	(set #addr-ok 0)
+	(if (patmatch "[0-9]#[0-9].[0-9]#[0-9]" #addr)
+		(
+			(set #i 0)
+			(while (<> (substr #addr #i 1) ".") (set #i (+ #i 1)))
+			(set #area (+ 0 (substr #addr 0 #i)))
+			(set #node (+ 0 (substr #addr (+ #i 1))))
+			(if (AND (> #area 0) (< #area 64) (> #node 0) (< #node 1024))
+				(set #addr-ok 1)
+			)
+		)
+	)
+)
+
+; #name: 1-6 letters and digits, at least one letter. Sets #name-ok.
+(procedure P_CHECKNAME
+	(set #name-ok 0)
+	(if (AND (> (strlen #name) 0) (< (strlen #name) 7)
+	         (patmatch "#[A-Za-z0-9]" #name)
+	         (NOT (patmatch "#[0-9]" #name)))
+		(set #name-ok 1)
+	)
+)
+
+; #val into ENVARC:DECnet/#var and ENV:DECnet/#var (no newline, for getenv)
+(procedure P_SAVEVAR
+	(textfile (prompt "") (help "") (dest (tackon "ENVARC:DECnet" #var)) (append #val))
+	(textfile (prompt "") (help "") (dest (tackon "ENV:DECnet" #var)) (append #val))
+)
+
+; ---------------------------------------------------------------- remove
+
+(procedure P_REMOVE
+	(set #old (getassign "DECnet"))
+	(if (= #old "")
+		(set #old (askdir
+			(prompt "Where is the DECnet drawer you want to remove?")
+			(help @askdir-help)
+			(default "SYS:DECnet")
+		))
+	)
+	(if (NOT (exists (tackon #old "C/dnstartup")))
+		(abort "\"" #old "\" does not look like a DECnet drawer (C/dnstartup is missing).")
+	)
+	(if (askbool
+		(prompt "Remove DECnet?\n\n"
+		        "This stops dnetd, takes DECnet out of S:User-Startup and deletes\n"
+		        "\"" #old "\" and LIBS:decnet.library.\n\n"
+		        "Your node list ENVARC:DECnet/nodes is kept.")
+		(help "Answer \"Remove\" to remove DECnet from this Amiga.")
+		(choices "Remove" "Cancel")
+		(default 0))
+		(
+			(execute (tackon #old "S/DECnet-Stop"))
+			(run (cat "\"" (tackon #old "C/dnstartup") "\" REMOVE"))
+			(delete "LIBS:decnet.library" (optional "force") (prompt "") (help ""))
+			(delete #old (all) (optional "force") (prompt "") (help ""))
+			(delete (cat #old ".info") (optional "force") (prompt "") (help ""))
+			(set #left "")
+			(if (exists #old)
+				(set #left (cat "\n\nThe empty drawer \"" #old "\" is still in use "
+				                "(the Shell's command path); delete it after the reboot."))
+			)
+			(exit "DECnet has been removed. DN: and the DECnet: assign stay "
+			      "until the next reboot." #left (quiet))
+		)
+		(exit (quiet))
+	)
+)
+
+; ---------------------------------------------------------------- install
+
+(procedure P_DEVICE
+	; device, unit and the check with dncheck
+	(set #again 1)
+	(while #again
+		(set #device (askfile
+			(prompt "Choose the SANA-II driver of your network card "
+			        "(usually in DEVS:Networks, e.g. a2065.device).")
+			(help "DECnet talks to the network card through its SANA-II driver, "
+			      "the same one AmiTCP or Roadshow use. Look into your TCP/IP "
+			      "configuration if you are not sure which one it is.\n\n"
+			      @askfile-help)
+			(default #device)
+		))
+		(if (= @user-level 2)
+			(set #device (askstring
+				(prompt "SANA-II device name (as dnetd opens it).\n"
+				        "Built-in devices without a file, such as uaenet.device in "
+				        "an emulator, can be typed here.")
+				(help @askstring-help)
+				(default #device)
+			))
+		)
+		(set #unit (asknumber
+			(prompt "Unit number of the network card\n(0 unless you have several cards).")
+			(help @asknumber-help)
+			(range 0 31)
+			(default #unit)
+		))
+
+		(message "Now dncheck tests the card with the DECnet address " #addr ".\n\n"
+		         "It needs up to 20 seconds and shows its result in a window, "
+		         "which stays open until you close it.\n\n"
+		         "Note: if AmiTCP or another TCP/IP stack is running now, the card "
+		         "already has its address. DECnet still works after the next "
+		         "reboot, when it starts before TCP/IP."
+		         (help "dncheck checks that the driver accepts the DECnet station "
+		               "address AA-00-04-00-xx-xx and that DECnet frames arrive."))
+		(set #rc (run (cat "C/dncheck DEVICE=\"" #device "\" UNIT=" #unit " ADDR=" #addr
+		                   " >CON:0/380/640/170/DECnet-Check/CLOSE/WAIT")))
+		(set #again 0)
+		(if (= #rc 5)
+			(set #again (NOT (askbool
+				(prompt "dncheck: the card can carry DECnet, with limits "
+				        "(see its window).\n\nInstall with this card?")
+				(help "Return code 5 means: fallback mode, the card was already "
+				      "configured by other software, or no DECnet frames were seen "
+				      "(no router or other DECnet node on this network). DECnet "
+				      "usually works anyway after a reboot.")
+				(choices "Install" "Choose again")
+				(default 0)))
+			)
+		)
+		(if (= #rc 10)
+			(set #again (NOT (askbool
+				(prompt "dncheck: this driver cannot carry DECnet "
+				        "(see its window).\n\nInstall anyway?")
+				(help "The driver neither takes the DECnet station address nor "
+				      "allows promiscuous mode. dnetd will not work with it.")
+				(choices "Install anyway" "Choose again")
+				(default 1)))
+			)
+		)
+		(if (>= #rc 20)
+			(set #again (NOT (askbool
+				(prompt "dncheck could not open " #device " unit " #unit ".\n\n"
+				        "Install anyway?")
+				(help "The driver or the unit does not exist, or it is in use "
+				      "exclusively by other software.")
+				(choices "Install anyway" "Choose again")
+				(default 1)))
+			)
+		)
+	)
+)
+
+(procedure P_INSTALL
+	; ---- where
+	(set #target (getassign "DECnet"))
+	(if (= #target "")
+		(
+			(set #dest (askdir
+				(prompt "Where should the drawer \"DECnet\" be created?")
+				(help @askdir-help)
+				(default @default-dest)
+			))
+			(set #target (tackon #dest "DECnet"))
+		)
+		(message "DECnet is already installed in \"" #target "\".\n\n"
+		         "It will be updated there. Your settings are asked again; "
+		         "the node list is kept."
+		         (help "The DECnet: assign points to an existing installation."))
+	)
+	(set @default-dest #target)
+
+	; ---- device and unit of the last installation, if any. Address and name
+	; never get a default: a copied system or a careless click must not put a
+	; second node with the same address on the network.
+	(set #addr "")
+	(set #name "")
+	(set #device (getenv "DECnet/Device"))
+	(if (= #device "") (set #device "DEVS:Networks/a2065.device"))
+	(set #unit (getenv "DECnet/Unit"))
+	(set #unit (if (= #unit "") 0 (+ 0 #unit)))
+
+	; ---- who am I
+	(set #addr-ok 0)
+	(while (NOT #addr-ok)
+		(set #addr (askstring
+			(prompt "DECnet address of this Amiga (area.node: area 1-63, node 1-1023).\n"
+			        "Ask the network manager for a free one; never use the address "
+			        "of another node.")
+			(help "Every DECnet Phase IV node has an address area.node, area 1-63, "
+			      "node 1-1023. It must be unique in the network. The card's "
+			      "Ethernet address becomes AA-00-04-00-xx-xx from it, also for "
+			      "TCP/IP (a DHCP reservation keyed on the old address must be "
+			      "changed).\n\n" @askstring-help)
+			(default #addr)
+		))
+		(P_CHECKADDR)
+		(if (NOT #addr-ok)
+			(message "\"" #addr "\" is not a DECnet address.\n\n"
+			         "Use area.node, area 1-63, node 1-1023.")
+		)
+	)
+	(set #name-ok 0)
+	(while (NOT #name-ok)
+		(set #name (askstring
+			(prompt "DECnet node name of this Amiga (1-6 letters and digits).")
+			(help "The name other nodes know this Amiga by. It goes into the node "
+			      "list; DECnet itself only uses the address.\n\n" @askstring-help)
+			(default #name)
+		))
+		(P_CHECKNAME)
+		(if (NOT #name-ok)
+			(message "\"" #name "\" is not a DECnet node name.\n\n"
+			         "Use 1 to 6 letters and digits, at least one letter.")
+		)
+	)
+
+	; ---- card
+	(P_DEVICE)
+
+	; ---- files
+	(makedir #target (prompt "Creating " #target) (help @makedir-help))
+	(if (NOT (exists (cat #target ".info")))
+		(copyfiles (prompt "") (help "") (source "Icons/DECnet.info") (dest (pathonly #target)))
+	)
+	(copyfiles
+		(prompt "Copying the icons for DN:")
+		(help @copyfiles-help)
+		(source "Icons")
+		(dest (tackon #target "Icons"))
+		(pattern "#?.info")
+	)
+	(copyfiles
+		(prompt "Copying the DECnet commands")
+		(help @copyfiles-help)
+		(source "C")
+		(dest (tackon #target "C"))
+		(all)
+	)
+	(copyfiles
+		(prompt "Copying the DN: file system")
+		(help @copyfiles-help)
+		(source "L")
+		(dest (tackon #target "L"))
+		(all)
+	)
+	(copyfiles
+		(prompt "Copying the Mountlist for DN:")
+		(help @copyfiles-help)
+		(source "Storage")
+		(dest (tackon #target "Storage"))
+		(pattern "Mountlist")
+	)
+	(copyfiles
+		(prompt "Copying DECnet-Stop")
+		(help @copyfiles-help)
+		(source "S")
+		(dest (tackon #target "S"))
+		(pattern "DECnet-Stop")
+	)
+	(textfile
+		(prompt "Writing DECnet-Start")
+		(help @textfile-help)
+		(dest (tackon #target "S/DECnet-Start"))
+		(append ".key ADDR/K,UNIT/K,DEVICE/K\n.bra {\n.ket }\n"
+		        ".def ADDR " #addr "\n.def UNIT " #unit "\n.def DEVICE \"" #device "\"\n")
+		(include "S/DECnet-Start.body")
+	)
+	(copyfiles
+		(prompt "Copying the documentation")
+		(help @copyfiles-help)
+		(source "")
+		(dest #target)
+		(choices "ReadMe")
+		(infos)
+	)
+	; the ReadMe in the archive uses More (on every OS); MultiView from OS 3.0
+	(if (< (/ (getversion) 65536) 39)
+		(
+		(tooltype (dest (tackon #target "ReadMe")) (setdefaulttool "SYS:Utilities/More"))
+		(tooltype (dest (tackon #target "Icons/Text")) (setdefaulttool "SYS:Utilities/More"))
+		)
+		(tooltype (dest (tackon #target "ReadMe")) (setdefaulttool "MultiView"))
+	)
+	(copylib
+		(prompt "Copying decnet.library to LIBS:")
+		(help @copylib-help)
+		(source "Libs/decnet.library")
+		(dest "LIBS:")
+		(confirm)
+	)
+
+	; ---- node list
+	(makedir "ENVARC:DECnet" (prompt "") (help ""))
+	(if (exists "ENVARC:DECnet/nodes")
+		(message "Your node list ENVARC:DECnet/nodes is kept.\n\n"
+		         "If this Amiga's name or address changed, edit its line there."
+		         (help "The installer never overwrites the node list, because it "
+		               "holds user names and passwords."))
+		(
+		(set #line #name)
+		(while (< (strlen #line) 8) (set #line (cat #line " ")))
+		(textfile
+			(prompt "Writing the node list")
+			(help @textfile-help)
+			(dest "ENVARC:DECnet/nodes")
+			(include "Storage/nodes.head")
+			(append "\n" #line #addr "\n")
+		)
+		)
+	)
+	(makedir "ENV:DECnet" (prompt "") (help ""))
+	(copyfiles (prompt "") (help "") (source "ENVARC:DECnet/nodes") (dest "ENV:DECnet"))
+
+	; remember the answers as defaults for the next update
+	(set #var "Device") (set #val #device) (P_SAVEVAR)
+	(set #var "Unit") (set #val #unit) (P_SAVEVAR)
+
+	; ---- start at boot
+	(if (askbool
+		(prompt "Start DECnet at boot?\n\n"
+		        "This adds a DECnet block to S:User-Startup, in front of AmiTCP "
+		        "or other TCP/IP software (it must start first).")
+		(help "Without it, start DECnet yourself with\n"
+		      "  Assign DECnet: \"" #target "\"\n  Execute DECnet:S/DECnet-Start\n"
+		      "before any TCP/IP software. The old S:User-Startup is kept as "
+		      "S:User-Startup.bak.")
+		(choices "Yes" "No")
+		(default 0))
+		(
+			(set #rc (run (cat "\"" (tackon #target "C/dnstartup") "\" DIR=\"" #target "\"")
+				(prompt "Adding DECnet to S:User-Startup")
+				(help @run-help)
+			))
+			(if (= #rc 5)
+				(message "Warning: S:Startup-Sequence starts network software before "
+				         "S:User-Startup. It would configure the card before DECnet. "
+				         "Move that line below the User-Startup call."))
+			(if (> #rc 5)
+				(message "S:User-Startup could not be changed. Add these lines "
+				         "before any TCP/IP software:\n\n"
+				         "Assign DECnet: \"" #target "\"\nExecute DECnet:S/DECnet-Start"))
+		)
+	)
+
+	; ---- start now, copy node names
+	(makeassign "DECnet" #target)
+	(if (askbool
+		(prompt "Start DECnet now?\n\n"
+		        "If TCP/IP software is running already, DECnet may only work after "
+		        "the next reboot.")
+		(help "Runs DECnet:S/DECnet-Start: mounts DN: and starts dnetd.")
+		(choices "Start" "Later")
+		(default 0))
+		(
+			(execute "DECnet:S/DECnet-Start")
+			(set #from (askstring
+				(prompt "Copy node names from another DECnet node?\n\n"
+				        "Address (area.node) of a router or VMS system that knows "
+				        "the network. Leave it empty to skip.")
+				(help "DECnet has no name service: every node keeps its own list. "
+				      "dnnodes asks that node's network management (NML) for the "
+				      "nodes it can reach now and adds their names to your list. "
+				      "Repeat it later with\n  dnnodes FROM=node REACHABLE UPDATE\n\n"
+				      @askstring-help)
+				(default "")
+			))
+			(if (<> #from "")
+				(
+				(working "Waiting 15 seconds for the DECnet router ...")
+				(run "Wait 15")
+				(run (cat "DECnet:C/dnnodes FROM=" #from " REACHABLE UPDATE"
+				          " >CON:0/380/640/170/DECnet-Nodes/CLOSE/WAIT"))
+				)
+			)
+		)
+	)
+
+	(exit "DECnet " #version " is installed in \"" #target "\".\n\n"
+	      "Files on other nodes are in DN: (e.g. DN:NODE/file). "
+	      "Add user names and passwords in ENVARC:DECnet/nodes. "
+	      "Read " (tackon #target "ReadMe") " for more.\n\n"
+	      "Please reboot before using TCP/IP, so that DECnet configures the "
+	      "network card first." (quiet))
+)
+
+; ---------------------------------------------------------------- main
+
+(welcome "Welcome to DECnet " #version " for the Amiga, a DECnet Phase IV endnode.")
+
+; At novice level the Installer answers every question with its default,
+; but the address and name have none. The icon has MINUSER=AVERAGE; from
+; the Shell use: Installer Install-DECnet MINUSER AVERAGE
+(if (= @user-level 0)
+	(abort "DECnet needs a few answers from you (address, name, network card).\n\n"
+	       "Please start the installation again and choose \"Intermediate user\" "
+	       "or \"Expert user\".")
+)
+
+(if (= 1 (askchoice
+	(prompt "What do you want to do?")
+	(help @askchoice-help)
+	(choices "Install or update DECnet" "Remove DECnet")
+	(default 0)))
+	(P_REMOVE)
+	(P_INSTALL)
+)
