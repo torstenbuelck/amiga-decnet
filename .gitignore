@@ -10,6 +10,7 @@
 /src/handler/dn-handler
 /src/term/dnterm.device
 /src/term/dntermpatch
+/src/maint/dnmaint
 /src/linux/dnhost
 /src/linux/dntool
 /src/linux/nsptest
