@@ -46,6 +46,8 @@ struct ctermh {
 	int width, height;          /* from the terminal, 0 = unknown */
 	char termtype[16];
 	int last_cr;                /* last output byte was CR (LF -> CR LF) */
+	int clear_discard;          /* after an OOB character the terminal may
+	                               discard output: next WRITE ends that */
 };
 
 void ctermh_init(struct ctermh *h);

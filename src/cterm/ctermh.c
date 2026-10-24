@@ -91,7 +91,9 @@ static int send_write(struct ctermh *h, const char *data, long n)
 	unsigned char m[CTERMH_MAXMSG];
 
 	m[0] = CT_WRITE;
-	put16(m + 1, 0x0030);           /* plain, as ctermd */
+	/* plain, as ctermd; D (0x0008) ends the terminal's discard state */
+	put16(m + 1, h->clear_discard ? 0x0038 : 0x0030);
+	h->clear_discard = 0;
 	m[3] = m[4] = 0;                /* no prefix, no postfix */
 	memcpy(m + 5, data, n);
 	return send_common(h, m, n + 5);
@@ -313,6 +315,9 @@ static void do_cterm(struct ctermh *h, const unsigned char *b, long n)
 		do_read_data(h, b, n);
 		break;
 	case CT_OOB:
+		/* the terminal may discard output now until we end it: with
+		   b[1] set, and VMS also after ^C ("Cancel") without it */
+		h->clear_discard = 1;
 		if (n > 2 && h->interrupt)
 			h->interrupt(h->ctx, b[2]);
 		break;

@@ -4,7 +4,9 @@
  * The Shell gets our port as its console: ACTION_READ is served from
  * CTERM reads (line reads in cooked mode, char reads in raw mode),
  * ACTION_WRITE goes out through ctermh_write. Translations: LF -> CR LF
- * out, CR -> LF in (cooked mode), CSI 0x9B <-> ESC [.
+ * out, CR -> LF in (cooked mode), CSI 0x9B <-> ESC [, form feed ->
+ * ESC [H ESC [2J out. ACTION_DISK_INFO hands out a ConUnit with the
+ * terminal size (More sizes its pages with it).
  *
  * The session waits on conport's signal and hands every message to
  * con_packet() (the DosPacket is in mn_Node.ln_Name); the line typed
@@ -23,7 +25,12 @@
 
 #include <string.h>
 
+#include <devices/conunit.h>
+
 #include "dnmaint.h"
+
+static struct ConUnit fake_cu;
+static struct IOStdReq fake_io;
 
 #define STOP_TICKS (20 * 50)    /* con_stop waits this long for the Shell */
 #define CSI 0x9b
@@ -84,19 +91,74 @@ static void con_serve(struct msession *s)
 		ctermh_read(&s->cth, s->raw ? CTH_CHAR : CTH_LINE, NULL, 0, NULL, 0);
 }
 
-/* output from the Shell: CSI becomes ESC [, LF -> CR LF in ctermh */
+/* append a decimal number */
+static int put_num(char *p, int v)
+{
+	char tmp[8];
+	int n = 0, i = 0;
+
+	do
+		tmp[n++] = (char)('0' + v % 10);
+	while ((v /= 10) > 0 && n < (int)sizeof tmp);
+	while (n > 0)
+		p[i++] = tmp[--n];
+	return i;
+}
+
+/* Window Status Request (CSI 0 q, used by More and others): answer
+   like the Amiga console, CSI 1;1;rows;columns r, with the size the
+   terminal reported */
+static void con_report(struct msession *s)
+{
+	char r[32];
+	int n = 0;
+
+	r[n++] = (char)CSI;
+	r[n++] = '1';
+	r[n++] = ';';
+	r[n++] = '1';
+	r[n++] = ';';
+	n += put_num(r + n, s->cth.height > 0 ? s->cth.height : 24);
+	r[n++] = ';';
+	n += put_num(r + n, s->cth.width > 0 ? s->cth.width : 80);
+	r[n++] = ' ';
+	r[n++] = 'r';
+	con_input(s, r, n, 0);
+}
+
+/* output from the Shell: CSI becomes ESC [, form feed home + erase,
+   LF -> CR LF in ctermh; a Window Status Request is answered here, not
+   passed on */
 static void con_write(struct msession *s, const UBYTE *buf, long n)
 {
-	long i, from = 0;
+	long i, from = 0, k;
 
 	if (s->state == MS_DONE)
 		return;
 	for (i = 0; i < n; i++) {
-		if (buf[i] != CSI)
+		if (buf[i] == '\f') {
+			/* clears the Amiga console; on a VT: home, erase */
+			if (i > from)
+				ctermh_write(&s->cth, (const char *)buf + from, i - from);
+			ctermh_write(&s->cth, "\033[H\033[2J", 7);
+			from = i + 1;
+			continue;
+		}
+		if (buf[i] == CSI)
+			k = i + 1;
+		else if (buf[i] == ESC && i + 1 < n && buf[i + 1] == '[')
+			k = i + 2;
+		else
 			continue;
 		if (i > from)
 			ctermh_write(&s->cth, (const char *)buf + from, i - from);
-		ctermh_write(&s->cth, "\033[", 2);
+		if (k + 2 < n && buf[k] == '0' && buf[k + 1] == ' ' && buf[k + 2] == 'q') {
+			con_report(s);
+			i = k + 2;              /* the loop goes on after it */
+		} else {
+			ctermh_write(&s->cth, "\033[", 2);
+			i = k - 1;
+		}
 		from = i + 1;
 	}
 	if (n > from)
@@ -178,10 +240,21 @@ void con_packet(struct msession *s, struct DosPacket *dp)
 		ReplyPkt(dp, DOSTRUE, (LONG)old);
 		break;
 	case ACTION_DISK_INFO:
-		/* a console without a window (id_VolumeNode 0) */
+		/* a console without a window (id_VolumeNode 0); programs
+		   that size their output (More) find the terminal size in a
+		   ConUnit of our own (no console.device behind it) */
 		id = BADDR(dp->dp_Arg1);
 		memset(id, 0, sizeof *id);
 		id->id_DiskType = ID_CON;
+		memset(&fake_cu, 0, sizeof fake_cu);
+		memset(&fake_io, 0, sizeof fake_io);
+		fake_cu.cu_XMax = (s->cth.width > 0 ? s->cth.width : 80) - 1;
+		fake_cu.cu_YMax = (s->cth.height > 0 ? s->cth.height : 24) - 1;
+		fake_cu.cu_XRSize = fake_cu.cu_YRSize = 8;
+		fake_cu.cu_XRExtant = (fake_cu.cu_XMax + 1) * 8 - 1;
+		fake_cu.cu_YRExtant = (fake_cu.cu_YMax + 1) * 8 - 1;
+		fake_io.io_Unit = (struct Unit *)&fake_cu;
+		id->id_InUse = (LONG)&fake_io;
 		ReplyPkt(dp, DOSTRUE, 0);
 		break;
 	case ACTION_SEEK:
