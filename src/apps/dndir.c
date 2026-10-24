@@ -2,8 +2,10 @@
  * dndir - list files on a DECnet node (DAP / FAL).
  *
  * Usage: dndir NODE/A,SPEC,USER/K,PASSWORD/K,NOBLOCK/S,VERBOSE/S
- *   SPEC default *.*; NOBLOCK for servers like FOTOFX
- *   Without USER, USER/PASSWORD/NOBLOCK come from ENV:DECnet/nodes.
+ *   SPEC default *.*. Directory listings always offer DAP blocking, also
+ *   for nodes with NOBLOCK (FOTOFX needs that only for opening files);
+ *   NOBLOCK stays in the template for old scripts and does nothing.
+ *   Without USER, USER/PASSWORD come from ENV:DECnet/nodes.
  *
  * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
@@ -16,7 +18,7 @@
 
 #include "dapamiga.h"
 
-static const char version[] = "$VER: dndir 0.2 (23.10.2026)";
+static const char version[] = "$VER: dndir 0.3 (24.10.2026)";
 unsigned long __stack = 16384;
 
 static int show(void *ud, const struct dap_dirent *e)
@@ -46,7 +48,7 @@ int main(void)
 		return RETURN_FAIL;
 	}
 	d = dapa_open((const char *)args[0], (const char *)args[2], (const char *)args[3],
-	              !args[4], args[5] != 0);
+	              DAPA_BLOCK_ALWAYS, args[5] != 0);
 	if (d) {
 		if (dap_directory(d, args[1] ? (const char *)args[1] : "*.*", show, &count) == 0) {
 			Printf("\nTotal of %ld file%s.\n", count, (STRPTR)(count == 1 ? "" : "s"));

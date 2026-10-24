@@ -72,7 +72,8 @@ addresses. Yours is ENVARC:DECnet/nodes, one node per line:
 
   USER name      user name for files on that node (omit: none)
   PASSWORD word  password for that user (omit: none)
-  NOBLOCK        don't offer DAP blocking (some servers need this)
+  NOBLOCK        don't offer DAP blocking when opening files (FOTOFX
+                 needs it); directory listings always use blocking
   PURGE          DN: deletes older VMS versions of a file after
                  writing it; without it they are kept
   SHOW           node appears as a drawer in DN:; if no node has
@@ -83,9 +84,9 @@ For example:
 
   VAX1    1.10   USER guest PASSWORD secret PURGE SHOW
 
-DN:, dndir, dncopy and dnnodes take USER, PASSWORD and NOBLOCK from
-here. USER and PASSWORD given on their command line win; NOBLOCK
-counts when it is in either place.
+DN:, dndir, dncopy and dnnodes take USER and PASSWORD from here, DN:
+and dncopy also NOBLOCK. USER and PASSWORD given on the command line
+win; NOBLOCK counts when it is in either place.
 
 Where to edit: as with all AmigaOS settings, DN: and the programs read
 only ENV:DECnet/nodes, the copy in RAM that DECnet-Start makes from

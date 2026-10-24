@@ -346,6 +346,16 @@ auf echter Hardware nachgetestet):
   26 große Segmente: kein Verlust, ~7 s. Der FOTOFX-Fehler mit Blocking
   betrifft nur ACCESS auf fehlende Dateien; NOBLOCK als Vorgabe für FOTOFX
   ist daher zu überdenken.
+* **NOBLOCK nur noch für Dateizugriffe** (dn-handler 0.8, dndir 0.3). Test
+  vom Pi gegen FOTOFX (`dntool dir`/`get`, je mit und ohne Blocking):
+  Verzeichnisanfragen auf fehlende Datei, fehlenden Ordner oder leere
+  Wurzel beantwortet FOTOFX auch mit Blocking sofort richtig; `MUSTER/*`
+  dauert mit Blocking 0,6 s statt 3,3 s. Nur *Öffnen* einer fehlenden Datei
+  oder in einem fehlenden Ordner bleibt mit Blocking ohne Antwort (Timeout),
+  der Fehler besteht also weiter. Deshalb bieten Links, die nur Verzeichnisse
+  lesen (Auflisten, Einzelprüfung bei Lock/Examine), immer Blocking an;
+  Öffnen, Schreiben, Löschen, Umbenennen und dncopy beachten NOBLOCK. dndir
+  behält NOBLOCK in der Vorlage, wirkungslos.
 * **a2065.device hält einzelne Frames fest.** AMI wiederholte gelegentlich
   ein Disconnect Initiate (3 von ~30 Verbindungen), obwohl HOWIE es nach
   7–13 ms bestätigt hatte; die Wiederholung nach 1 s beantwortete HOWIE mit

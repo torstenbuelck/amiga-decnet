@@ -53,7 +53,7 @@ struct Library *DECnetBase;
 struct Library *UtilityBase;
 
 
-static const char version[] = "$VER: dn-handler 0.7 (23.10.2026)";
+static const char version[] = "$VER: dn-handler 0.8 (24.10.2026)";
 
 #define VOLNAME     "DECnet Nodes"   /* not "DECnet": that would hide the DECnet: assign */
 #define CACHE_TICKS (10 * TICKS_PER_SECOND)
@@ -250,8 +250,11 @@ static void conn_close(struct conn *c)
 	c->link = NULL;
 }
 
-/* Connect to FAL on the node and exchange CONFIG. Returns a DOS error. */
-static LONG conn_open(struct conn *c, const struct nodecfg *cfg)
+/* Connect to FAL on the node and exchange CONFIG. Returns a DOS error.
+   dir: the link only lists directories; those always offer blocking,
+   because FOTOFX, the reason for NOBLOCK, hangs with blocking only when a
+   file to be opened is missing (directory requests are answered). */
+static LONG conn_open(struct conn *c, const struct nodecfg *cfg, int dir)
 {
 	struct DnConnectReq req;
 
@@ -279,7 +282,7 @@ static LONG conn_open(struct conn *c, const struct nodecfg *cfg)
 	c->d->log = dap_logger;
 	c->d->verbose = debug;
 	c->d->ctx = c;
-	if (dap_config(c->d, !cfg->noblock)) {
+	if (dap_config(c->d, dir || !cfg->noblock)) {
 		dlog("config %s: %s", cfg->name, c->d->error);
 		conn_close(c);
 		return ERROR_OBJECT_NOT_FOUND;
@@ -739,7 +742,7 @@ static struct dirlist *get_list(const char *path)
 		path_node(path, node);
 		if (!nc_lookup(node, &cfg, NULL, NULL)) {
 			l->error = ERROR_OBJECT_NOT_FOUND;
-		} else if ((l->error = conn_open(&c, &cfg)) == 0) {
+		} else if ((l->error = conn_open(&c, &cfg, 1)) == 0) {
 			remote_spec(path, 1, spec);
 			if (dap_directory(c.d, spec, add_entry, l)) {
 				dlog("dir %s: %s", spec, c.d->error);
@@ -998,7 +1001,7 @@ static LONG lookup(const char *path, int *isdir, struct dent *info)
 		path_node(path, node);
 		if (!nc_lookup(node, &cfg, NULL, NULL))
 			return ERROR_OBJECT_NOT_FOUND;
-		if ((err = conn_open(&c, &cfg)) != 0)
+		if ((err = conn_open(&c, &cfg, 1)) != 0)
 			return err;
 		memset(&one, 0, sizeof one);
 		remote_spec(path, 0, spec);
@@ -1065,7 +1068,7 @@ static LONG file_start(struct myfile *f)
 	char spec[SPECLEN];
 	LONG err;
 
-	if ((err = conn_open(&f->c, &f->cfg)) != 0)
+	if ((err = conn_open(&f->c, &f->cfg, 0)) != 0)
 		return err;
 	remote_spec(f->path, 0, spec);
 	if (dap_open_read(f->c.d, spec, &f->f)) {
@@ -1668,7 +1671,7 @@ static LONG do_findoutput(struct DosPacket *pkt, struct FileHandle *fh, struct m
 	if (!nc_lookup(node, &f->cfg, NULL, NULL))
 		*err = ERROR_OBJECT_NOT_FOUND;
 	else
-		*err = conn_open(&f->c, &f->cfg);   /* login errors show up now */
+		*err = conn_open(&f->c, &f->cfg, 0);   /* login errors show up now */
 	if (*err) {
 		FreeVec(f->wbuf);
 		FreeVec(f);
@@ -1705,7 +1708,7 @@ static LONG remote_op(const char *path, const char *spec, const char *newspec)
 	if (!nc_lookup(node, &cfg, NULL, NULL))
 		return ERROR_OBJECT_NOT_FOUND;
 	memset(&tmp, 0, sizeof tmp);
-	if ((err = conn_open(&tmp.c, &cfg)) != 0)
+	if ((err = conn_open(&tmp.c, &cfg, 0)) != 0)
 		return err;
 	r = newspec ? dap_rename(tmp.c.d, spec, newspec) : dap_erase(tmp.c.d, spec);
 	if (r) {

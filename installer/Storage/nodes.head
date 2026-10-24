@@ -8,7 +8,8 @@
 ; Keywords after the address, in any order:
 ; USER name      user name for files on the node (omit: none)
 ; PASSWORD word  password for that user (omit: none)
-; NOBLOCK        don't offer DAP blocking (some servers need it)
+; NOBLOCK        don't offer DAP blocking when opening files (FOTOFX
+;                needs it); directory listings always use blocking
 ; PURGE          DN: deletes older VMS versions of a file after
 ;                writing it; without it they are kept
 ; SHOW           node appears as a drawer in DN:; if no node has

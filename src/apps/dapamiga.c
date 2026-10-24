@@ -74,8 +74,8 @@ struct dap *dapa_open(const char *node, const char *user, const char *password,
 		if (!password && cfg.pass[0])
 			password = cfg.pass;
 	}
-	if (cfg.noblock)
-		blocking = 0;
+	if (cfg.noblock && blocking != DAPA_BLOCK_ALWAYS)
+		blocking = DAPA_NOBLOCK;
 	addr = DnNodeAddr((CONST_STRPTR)node);
 	if (addr < 0) {
 		say("unknown node %s", node);
