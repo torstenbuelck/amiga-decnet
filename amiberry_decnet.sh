@@ -18,7 +18,8 @@ DIR=/home/torsten/Developer/Amiga/DECnet
 # override with CONFIG=... (e.g. an installer test config on a copied hardfile)
 CONFIG=${CONFIG:-/home/torsten/Amiberry/Configurations/DECnet.uae}
 LOG="$DIR/amiberry.log"
-# Patched build (uaenet.device fixes, see amiberry-uaenet-decnet.patch);
+# Patched build (uaenet.device fixes and receive/address fixes for the
+# emulated network cards, see amiberry-uaenet-decnet.patch);
 # override with AMIBERRY=/usr/bin/amiberry to run the packaged one.
 AMIBERRY=${AMIBERRY:-/home/torsten/Developer/toolchains/amiberry-src/build/amiberry}
 BRIDGE=br0

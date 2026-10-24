@@ -1,3 +1,76 @@
+diff --git a/src/a2065.cpp b/src/a2065.cpp
+index 6a97552..9a50909 100644
+--- a/src/a2065.cpp
++++ b/src/a2065.cpp
+@@ -699,6 +699,11 @@ static void a2065_hsync_handler(void)
+ {
+ 	static int cnt;
+ 
++	// pcap/TAP backends queue received frames; they must be handed over
++	// from the emulation thread (only sana2.cpp did this, so the card never
++	// received anything)
++	if (td && sysdata)
++		ethernet_receive_poll(td, sysdata);
+ 	receive_queue_drain();
+ 
+ 	cnt--;
+@@ -722,6 +727,13 @@ static void chip_init2(void)
+ 	prom = (am_mode & MODE_PROM) ? 1 : 0;
+ 	fakeprom = a2065_promiscuous ? 1 : 0;
+ 
++	// The MAC swapping lets the card share the host's address on pcap.
++	// A TAP device is a port of its own: use the address the driver
++	// programmed, so that e.g. DECnet's AA-00-04-00-xx-xx goes out and
++	// unicasts to it come in unchanged.
++	if (td && td->type == UAENET_TAP)
++		memcpy(realmac, fakemac, sizeof realmac);
++
+ 	write_log(_T("7990: %04X %06X %d %d %d %d %06X %06X %02X:%02X:%02X:%02X:%02X:%02X\n"),
+ 		am_mode, iaddr, prom, fakeprom, am_rdr_rlen, am_tdr_tlen, am_rdr_rdra, am_tdr_tdra,
+ 		fakemac[0], fakemac[1], fakemac[2], fakemac[3], fakemac[4], fakemac[5]);
+diff --git a/src/qemuvga/ne2000.cpp b/src/qemuvga/ne2000.cpp
+index 47e3b6e..212b6ef 100644
+--- a/src/qemuvga/ne2000.cpp
++++ b/src/qemuvga/ne2000.cpp
+@@ -305,22 +305,10 @@ static bool ne2000_canreceive(NetClientState *nc, const uint8_t *buf)
+ 			mcast_idx = compute_mcast_idx(buf);
+ 			if (!(s->mult[mcast_idx >> 3] & (1 << (mcast_idx & 7))))
+ 				return false;
+-		} else if (s->dp8390 &&
+-			s->c.macaddr.a[0] == buf[0] &&
+-			s->c.macaddr.a[1] == buf[1] &&
+-			s->c.macaddr.a[2] == buf[2] &&
+-			s->c.macaddr.a[3] == buf[3] &&
+-			s->c.macaddr.a[4] == buf[4] &&
+-			s->c.macaddr.a[5] == buf[5]) {
+-			/* match */
+-		} else if (!s->dp8390 &&
+-			s->mem[0] == buf[0] &&
+-			s->mem[2] == buf[1] &&
+-			s->mem[4] == buf[2] &&
+-			s->mem[6] == buf[3] &&
+-			s->mem[8] == buf[4] &&
+-			s->mem[10] == buf[5]) {
+-			/* match */
++		} else if (!memcmp(s->phys, buf, 6)) {
++			/* match: the real chip (DP8390 and NE2000 alike) compares
++			   with the PAR registers the driver programmed, not with
++			   the factory address (DECnet drivers set AA-00-04-00-xx-xx) */
+ 		} else {
+ 			return false;
+ 		}
+@@ -1192,6 +1180,11 @@ static void gotfunc(void *devv, const uae_u8 *databuf, int len)
+ 
+ static void ne2000_hsync_handler(struct pci_board_state *pcibs)
+ {
++	// pcap/TAP backends queue received frames; they must be handed over
++	// from the emulation thread (only sana2.cpp did this, so the card never
++	// received anything)
++	if (td && sysdata)
++		ethernet_receive_poll(td, sysdata);
+ 	ne2000_receive_check();
+ }
+ 
 diff --git a/src/sana2.cpp b/src/sana2.cpp
 index 138b869..59e472f 100644
 --- a/src/sana2.cpp
