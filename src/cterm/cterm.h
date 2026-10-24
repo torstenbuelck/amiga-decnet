@@ -32,6 +32,7 @@ struct cterm {
 	int verbose;
 	char revision[9];               /* our name in INITIATE, max 8 chars */
 	int width, height;              /* reported terminal size */
+	char termtype[16];              /* reported terminal type, e.g. "VT200" */
 
 	/* state, cleared by cterm_init */
 	int bound;                      /* Foundation BIND done */

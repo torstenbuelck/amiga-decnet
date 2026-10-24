@@ -622,10 +622,13 @@ static void do_read_chars(struct cterm *c, const unsigned char *b, long n)
 		case 0x100:             /* logical */
 			switch (id) {
 			case 2: put16(out + o, 3); o += 2; break;     /* attributes */
-			case 3:                                 /* terminal type */
-				memcpy(out + o, "\005VT200", 6);
-				o += 6;
+			case 3: {                               /* terminal type */
+				unsigned l = (unsigned)strlen(c->termtype);
+				out[o++] = (unsigned char)l;
+				memcpy(out + o, c->termtype, l);
+				o += l;
 				break;
+			}
 			case 9: put16(out + o, c->width); o += 2; break;
 			case 0xa: put16(out + o, c->height); o += 2; break;
 			case 0xb: case 0xc: case 0xd: put16(out + o, 0); o += 2; break;
@@ -763,6 +766,8 @@ void cterm_init(struct cterm *c)
 	memset(&c->bound, 0, sizeof *c - ((char *)&c->bound - (char *)c));
 	if (!c->revision[0])
 		strcpy(c->revision, "DECnet");
+	if (!c->termtype[0])
+		strcpy(c->termtype, "VT200");
 	if (!c->width)
 		c->width = 80;
 	if (!c->height)

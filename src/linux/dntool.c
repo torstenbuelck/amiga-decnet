@@ -2,13 +2,17 @@
  * dntool.c - DAP client test tool on the portable core (Linux).
  *
  * Usage: dntool [-a area.node] [-i iface] [-v] [-u user] [-p password] [-n]
+ *               [-t termtype]
  *               dir NODE SPEC
  *               get NODE SPEC [LOCALFILE]
  *               put NODE LOCALFILE [SPEC]
  *               nodes NODE [permanent]
  *               task NODE NAME
  *               login NODE
- *   login is a CTERM terminal session (like SET HOST); Ctrl-] ends it
+ *   login is a CTERM terminal session (like SET HOST); Ctrl-] ends it.
+ *   -t sets the terminal type it reports (default VT200; VMS knows VT100,
+ *   VT102, VT200). VMS still needs SET TERMINAL/INQUIRE (or /DEVICE) for
+ *   full-screen programs: CTERM carries no ANSI/CRT capabilities.
  *   task connects to the named object (on VMS: runs NAME.COM in the login
  *   directory) and prints every message until the other end disconnects
  *   -n  do not offer DAP blocking (needed for FOTOFX)
@@ -195,7 +199,7 @@ static void cterm_log(void *ctx, const char *msg)
 	fprintf(stderr, "[%s]\r\n", msg);
 }
 
-static int do_login(dn_u16 node, int verbose)
+static int do_login(dn_u16 node, const char *termtype, int verbose)
 {
 	struct dn_connreq req;
 	struct termios old, raw;
@@ -222,6 +226,8 @@ static int do_login(dn_u16 node, int verbose)
 	c.ctx = s;
 	c.verbose = verbose;
 	strcpy(c.revision, "dntool");
+	if (termtype)
+		snprintf(c.termtype, sizeof c.termtype, "%s", termtype);
 	cterm_init(&c);
 
 	if (tty) {
@@ -282,7 +288,7 @@ static double now(void)
 
 static void usage(const char *prog)
 {
-	fprintf(stderr, "usage: %s [-a area.node] [-i iface] [-v] [-u user] [-p password] [-n]\n"
+	fprintf(stderr, "usage: %s [-a area.node] [-i iface] [-v] [-u user] [-p password] [-n] [-t termtype]\n"
 	        "          dir NODE SPEC | get NODE SPEC [LOCALFILE] | nodes NODE [permanent]\n"
 	        "          put NODE LOCALFILE [SPEC] | task NODE NAME | login NODE\n", prog);
 	exit(1);
@@ -290,7 +296,7 @@ static void usage(const char *prog)
 
 int main(int argc, char **argv)
 {
-	const char *ifname = NULL, *user = NULL, *pass = NULL, *cmd, *spec;
+	const char *ifname = NULL, *user = NULL, *pass = NULL, *termtype = NULL, *cmd, *spec;
 	dn_u16 addr = (23 << 10) | 203, node;
 	int c, verbose = 0, blocking = 1, reason, rc = 1;
 	struct dn_connreq req;
@@ -298,7 +304,7 @@ int main(int argc, char **argv)
 	struct dap *d;
 	double t0;
 
-	while ((c = getopt(argc, argv, "a:i:vu:p:n")) != -1) {
+	while ((c = getopt(argc, argv, "a:i:vu:p:nt:")) != -1) {
 		switch (c) {
 		case 'a': if (dn_aton(optarg, &addr)) usage(argv[0]); break;
 		case 'i': ifname = optarg; break;
@@ -306,6 +312,7 @@ int main(int argc, char **argv)
 		case 'u': user = optarg; break;
 		case 'p': pass = optarg; break;
 		case 'n': blocking = 0; break;
+		case 't': termtype = optarg; break;
 		default: usage(argv[0]);
 		}
 	}
@@ -328,7 +335,7 @@ int main(int argc, char **argv)
 	if (!strcmp(cmd, "login")) {
 		if (dnenv_open(ifname, addr, verbose))
 			return 1;
-		rc = do_login(node, verbose);
+		rc = do_login(node, termtype, verbose);
 		dnenv_close();
 		return rc;
 	}

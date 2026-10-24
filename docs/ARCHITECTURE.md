@@ -489,6 +489,17 @@ auf echter Hardware nachgetestet):
   bis `Username:` — gleiche Aushandlung. Mitschnitte
   `captures/2026-10-24-cterm-*.pcap`. Das Modul übersetzt für den 68000
   (≈ 6 KB) und wird so in `dnterm.device` übernommen.
+* **Vollbild (24.10.):** VMS führt ein CTERM-Terminal ohne `ANSI_CRT`,
+  `DEC_CRT`, `Advanced_video` — EVE/TPU bricht ab („SYS$INPUT must be
+  supported CRT“). Weder Terminaltyp (logisch 0x103: VT100/VT102/VT200
+  setzen nur `Device_Type`, VT220 wird „Unknown“) noch Attribute (0x102:
+  Bit 1 = Scope) ändern das. Erst `SET TERMINAL/INQUIRE` (Antwort des
+  Terminals auf `ESC [ c` läuft als Escape-Sequenz durch CTERM) oder
+  `/DEVICE=VT100` setzt die Fähigkeiten — wie bei LAT/Telnet, gehört in
+  LOGIN.COM bzw. die Doku. Danach getestet: EVE schreibgeschützt (Layout,
+  Statuszeile, Cursortasten), MONITOR SYSTEM (Rahmen in DEC-Grafikzeichen,
+  laufende Aktualisierung), beide mit ^Z verlassen. `dntool -t TYP` wählt
+  den gemeldeten Typ (Standard VT200).
 
 ## Verzeichnisaufbau
 
