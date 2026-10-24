@@ -380,29 +380,26 @@ static BPTR con_fh(struct msession *s)
 	return MKBADDR(fh);
 }
 
-/* S:Shell-Startup (prompt, aliases) as the first input line: works on
-   every OS version, while System() runs a startup stream before the
-   interactive input only from V47 on (SYS_CmdStream). The Shell does
-   not echo, so the line is not seen; con_input must append to inbuf */
-static void shell_startup(struct msession *s)
+/* S:Shell-Startup (prompt, aliases) as the command Execute() runs
+   before it reads the input, if the file exists. (Not as a first input
+   line: the Shell would show its default prompt before reading it.) */
+static const char *startup_cmd(void)
 {
-	static const char cmd[] = "Execute S:Shell-Startup\n";
 	BPTR lock;
 
 	lock = Lock((STRPTR)"S:Shell-Startup", ACCESS_READ);
 	if (!lock)
-		return;
+		return "";
 	UnLock(lock);
-	memcpy(s->inbuf, cmd, sizeof cmd - 1);
-	s->inlen = sizeof cmd - 1;
-	s->inpos = 0;
+	return "Execute S:Shell-Startup";
 }
 
 /*
  * The Shell is started the way Execute() documents for every OS
- * version: an empty command and an interactive input handle give an
- * interactive Shell like NewShell (System("") with SYS_Asynch only from
- * V47 on; before, it runs the empty command and ends). The Shell opens
+ * version: a command (S:Shell-Startup, or none) and an interactive
+ * input handle give an interactive Shell like NewShell, which runs the
+ * command first (System("") with SYS_Asynch does so only from V47 on;
+ * before, it runs the empty command and ends). The Shell opens
  * its output itself ("*" on our port, as pr_ConsoleTask comes from the
  * input handle) and closes it when it ends.
  *
@@ -426,7 +423,7 @@ static void launcher(void)
 	dir = Lock((STRPTR)"SYS:", ACCESS_READ);
 	if (dir)
 		old = CurrentDir(dir);
-	ok = Execute((STRPTR)"", launch_in, 0);
+	ok = Execute((STRPTR)startup_cmd(), launch_in, 0);
 	if (dir)
 		UnLock(CurrentDir(old));
 	/* Execute() returns when the Shell has ended (or could not start).
@@ -451,7 +448,6 @@ int shell_start(struct msession *s)
 	s->handles = 0;
 	s->shell_gone = FALSE;
 	s->shell_failed = FALSE;
-	shell_startup(s);
 	in = con_fh(s);
 	if (!in)
 		goto fail;
