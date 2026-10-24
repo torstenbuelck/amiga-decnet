@@ -5,6 +5,7 @@
 ;
 ; Installs:
 ;   DEVS:dnterm.device
+;   DECnet:C/dntermpatch     makes a copy of a program use dnterm.device
 ;
 ; Copyright (C) 2026  Torsten Bülck (tuti)
 ; SPDX-License-Identifier: GPL-2.0-or-later
@@ -28,6 +29,9 @@
 		(default 0))
 		(
 			(delete "DEVS:dnterm.device" (optional "force") (prompt "") (help ""))
+			(if (<> (getassign "DECnet") "")
+				(delete "DECnet:C/dntermpatch" (optional "force") (prompt "") (help ""))
+			)
 			(exit "dnterm.device has been removed." (quiet))
 		)
 		(exit (quiet))
@@ -46,6 +50,15 @@
 		(source "Devs/dnterm.device")
 		(dest "DEVS:")
 		(confirm)
+	)
+	; dntermpatch goes to the DECnet commands, which are in the Shell path
+	(if (<> (getassign "DECnet") "")
+		(copyfiles
+			(prompt "Copying dntermpatch to DECnet:C")
+			(help @copyfiles-help)
+			(source "C/dntermpatch")
+			(dest "DECnet:C")
+		)
 	)
 	(exit "dnterm.device " #version " is installed in DEVS:.\n\n"
 	      "In your terminal program choose dnterm.device, unit 0, instead of "

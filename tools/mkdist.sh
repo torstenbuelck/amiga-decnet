@@ -38,9 +38,10 @@ cp "$ICONS"/{Disk,Node,Dir,Text,Picture,File,DECnet}.info "$PKG/Icons/"   # DN: 
 
 # the terminal add-on
 TPKG="$OUT/DECnet-Term"
-mkdir -p "$TPKG/Devs"
+mkdir -p "$TPKG/Devs" "$TPKG/C"
 cp "$DIR/installer/term/Install-DECnet-Term" "$DIR/installer/term/ReadMe" "$TPKG/"
 cp "$DIR/src/term/dnterm.device" "$TPKG/Devs/"
+cp "$DIR/src/term/dntermpatch" "$TPKG/C/"
 cp "$ICONS/DECnet-Term.info" "$OUT/"
 cp "$ICONS"/{Install-DECnet-Term,ReadMe}.info "$TPKG/"
 rm -r "$ICONS"

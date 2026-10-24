@@ -18,7 +18,8 @@ Requirements
 
 Installation
 ------------
-Double-click "Install-DECnet-Term". It copies dnterm.device to DEVS:.
+Double-click "Install-DECnet-Term". It copies dnterm.device to DEVS:
+and the command dntermpatch to DECnet:C.
 From the Shell: cd to this drawer, then
 
   Installer Install-DECnet-Term
@@ -58,6 +59,25 @@ without it the frames show as letters (q, x, l, ...).
 Choose dnterm.device and unit 0 in Settings > Serial, then save the
 settings. The default emulation (ANSI/VT220) answers the VMS terminal
 inquiry correctly.
+
+
+VAXterm
+-------
+VAXterm 2.4 by Tuomo Mickelsson (Aminet comm/term/VAXterm.lha, from
+the Fish disks) is a VT220 emulator made for VMS. It always opens
+serial.device unit 1; it has no setting for the device. dntermpatch
+makes a copy of it that opens dnterm.device instead:
+
+  dntermpatch VAXterm VAXterm.dnterm
+
+Keep the copy in the VAXterm drawer (it needs its fonts and setup
+files there) and start VAXterm.dnterm. It uses unit 1 of
+dnterm.device, so a session in Term on unit 0 can stay open. VAXterm
+has a keyboard layout of its own (US by default); F3 opens its set-up
+page, where the German layout can be chosen.
+
+dntermpatch works on any program that has "serial.device" built in:
+it writes a copy and leaves the original alone.
 
 
 Modem commands
@@ -106,8 +126,9 @@ Ctrl-U, Ctrl-H, Ctrl-E) and Ctrl-Y work as on a VT terminal.
 
 Tested
 ------
-Term 4.8 on AmigaOS 3.1 (Amiberry), with OpenVMS 7.2 hosts: login,
-DCL, EVE and MONITOR. Reports with other terminal programs and hosts
+Term 4.8 and VAXterm 2.4 on AmigaOS 3.1 (Amiberry), with OpenVMS 7.2
+hosts: login, DCL, EVE and MONITOR. dnterm.device also on AmigaOS 2.04
+with a 68000. Reports with other terminal programs and hosts
 are welcome.
 
 

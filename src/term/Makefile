@@ -6,10 +6,13 @@ CFLAGS = -m68000 -Os -Wall -Wno-pointer-sign -I../../include -noixemul
 # which needs its stdio startup.
 SRCS = norun.c dnterm.c ../cterm/cterm.c ../handler/miniprintf.c
 
-all: dnterm.device
+all: dnterm.device dntermpatch
 
 dnterm.device: $(SRCS) ../cterm/cterm.h ../amiga/dnmsg.h ../../include/libraries/decnet.h
 	$(CC) $(CFLAGS) -fno-toplevel-reorder -nostartfiles -o $@ $(SRCS)
 
+dntermpatch: dntermpatch.c
+	$(CC) $(CFLAGS) -o $@ dntermpatch.c
+
 clean:
-	rm -f dnterm.device
+	rm -f dnterm.device dntermpatch
