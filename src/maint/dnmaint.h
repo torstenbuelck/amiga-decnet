@@ -53,7 +53,9 @@ struct msession {
 	/* console side: the Shell's I/O through our handler */
 	struct MsgPort *conport;        /* handler port the Shell talks to */
 	struct DosPacket *readpkt;      /* ACTION_READ waiting for input */
+	struct Task    *sigtask;        /* gets ^C (ACTION_CHANGE_SIGNAL) */
 	BOOL            raw;            /* ACTION_SCREEN_MODE: char reads */
+	BOOL            eof;            /* Ctrl-\ typed: next read ends 0 */
 	char            inbuf[CTERMH_MAXLINE + 2];
 	long            inlen, inpos;   /* input not yet given to the Shell */
 	int             handles;        /* file handles open on conport */
@@ -81,7 +83,7 @@ BOOL login_check(const struct mcfg *cfg, const char *buf, long n);
 /* console.c: DOS console handler for the Shell */
 int  con_start(struct msession *s);
 void con_packet(struct msession *s, struct DosPacket *dp);
-int  con_input(struct msession *s, const char *buf, long n);
+int  con_input(struct msession *s, const char *buf, long n, int term);
 void con_interrupt(struct msession *s, int ch);
 void con_stop(struct msession *s);
 int  shell_start(struct msession *s);
