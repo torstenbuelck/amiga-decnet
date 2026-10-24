@@ -1,0 +1,68 @@
+; $VER: Install-DECnet-Term 0.1 (24.10.2026)
+;
+; Installer script for dnterm.device, the CTERM terminal add-on of the
+; Amiga DECnet endnode. Needs DECnet (LIBS:decnet.library) and AmigaOS 2.04.
+;
+; Installs:
+;   DEVS:dnterm.device
+;
+; Copyright (C) 2026  Torsten Bülck (tuti)
+; SPDX-License-Identifier: GPL-2.0-or-later
+
+(set #version "0.1")
+(set @app-name "DECnet-Term")
+
+(if (< (/ (getversion) 65536) 37)
+	(abort "dnterm.device needs AmigaOS 2.04 (V37) or newer.")
+)
+
+(procedure P_REMOVE
+	(if (NOT (exists "DEVS:dnterm.device"))
+		(exit "dnterm.device is not installed." (quiet))
+	)
+	(if (askbool
+		(prompt "Remove dnterm.device?\n\n"
+		        "This deletes DEVS:dnterm.device. Close your terminal program first.")
+		(help "Answer \"Remove\" to delete dnterm.device from this Amiga.")
+		(choices "Remove" "Cancel")
+		(default 0))
+		(
+			(delete "DEVS:dnterm.device" (optional "force") (prompt "") (help ""))
+			(exit "dnterm.device has been removed." (quiet))
+		)
+		(exit (quiet))
+	)
+)
+
+(procedure P_INSTALL
+	(if (NOT (exists "LIBS:decnet.library"))
+		(abort "DECnet is not installed (LIBS:decnet.library is missing).\n\n"
+		       "dnterm.device logs in to other nodes through DECnet. Install "
+		       "the DECnet package first, then start this installation again.")
+	)
+	(copylib
+		(prompt "Copying dnterm.device to DEVS:")
+		(help @copylib-help)
+		(source "Devs/dnterm.device")
+		(dest "DEVS:")
+		(confirm)
+	)
+	(exit "dnterm.device " #version " is installed in DEVS:.\n\n"
+	      "In your terminal program choose dnterm.device, unit 0, instead of "
+	      "serial.device. Then type ATD and the name or address of a node, "
+	      "for example ATD 1.10. Read the ReadMe for more." (quiet))
+)
+
+(welcome "DECnet-Term " #version ": terminal sessions to DECnet nodes.\n\n"
+         "Copyright (C) 2026 Torsten Bülck (tuti)\n"
+         "https://forum.classic-computing.de\n"
+         "GNU GPL v2 or later, ABSOLUTELY NO WARRANTY.")
+
+(if (= 1 (askchoice
+	(prompt "What do you want to do?")
+	(help @askchoice-help)
+	(choices "Install or update dnterm.device" "Remove dnterm.device")
+	(default 0)))
+	(P_REMOVE)
+	(P_INSTALL)
+)

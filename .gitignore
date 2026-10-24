@@ -7,6 +7,7 @@
 /src/apps/dncopy
 /src/apps/dnnodes
 /src/handler/dn-handler
+/src/term/dnterm.device
 /src/linux/dnhost
 /src/linux/dntool
 /src/linux/nsptest

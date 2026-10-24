@@ -8,7 +8,8 @@ image. The selected GlowIcon gets the usual yellow glow.
 
 Usage: icons.py OUTDIR [--png PREVIEW.png]
 
-Writes OUTDIR/{Install-DECnet,ReadMe,DECnet,Disk,Node,Dir,Text,Picture,File}.info.
+Writes OUTDIR/{Install-DECnet,ReadMe,DECnet,Install-DECnet-Term,DECnet-Term,
+Disk,Node,Dir,Text,Picture,File}.info.
 
 Copyright (C) 2026  Torsten Bülck (tuti)
 SPDX-License-Identifier: GPL-2.0-or-later
@@ -281,6 +282,9 @@ ICONS = [
     ("Install-DECnet", "project", installer, "Installer", ["APPNAME=DECnet", "MINUSER=AVERAGE"]),
     ("ReadMe", "project", page, "More", []),             # OS 2.04 has no MultiView
     ("DECnet", "drawer", drawer, None, []),
+    # the DECnet-Term add-on package
+    ("Install-DECnet-Term", "project", installer, "Installer", ["APPNAME=DECnet-Term"]),
+    ("DECnet-Term", "drawer", drawer, None, []),
     ("Disk", "disk", drive, None, []),
     ("Node", "drawer", vax, None, []),
     # inside the nodes (dn-handler picks them by type and file name extension)

@@ -501,6 +501,50 @@ auf echter Hardware nachgetestet):
   laufende Aktualisierung), beide mit ^Z verlassen. `dntool -t TYP` wählt
   den gemeldeten Typ (Standard VT200).
 
+### dnterm.device (Stand 24.10.2026)
+* Schritt 2: `src/term/dnterm.c`, ein Exec-Device mit der Schnittstelle
+  von serial.device (CMD_READ/WRITE/CLEAR/RESET/FLUSH, SDCMD_QUERY/
+  SETPARAMS/BREAK, START/STOP). Terminalprogramme (getestet: Term 4.8)
+  wählen es statt serial.device. Zusatzpaket `dist/DECnet-Term.lha`
+  (`tools/mkdist.sh`, Installer `installer/term/`), kopiert nur nach DEVS:.
+* **Modem-Emulation** statt Konfigurationsdatei: `ATD KNOTEN|area.node`
+  baut die CTERM-Verbindung auf (Name über `DnNodeAddr`, ATDT/ATDP-Präfix
+  wird nur abgezogen, wenn der volle Name unbekannt ist — sonst würde aus
+  „TOPS20“ „OPS20“), `CONNECT`/`NO CARRIER`, Carrier-Bit 5 in io_Status
+  (low aktiv), `+++` mit 1 s Pause davor/danach, ATO, ATH, ATZ, E/Q/V,
+  ATI; übrige AT-Befehle werden mit OK quittiert (Init-Strings). Taste
+  während des Wählens bricht ab (Verbindung wird bei Ankunft geschlossen).
+  Ablehnungsgründe kommen als Textzeile vor dem Ergebnis („Node has no
+  CTERM server“ bei Grund 4). So funktionieren die Telefonbücher.
+* **Ein Prozess pro Unit** (0–3, unabhängige Sitzungen; VMS: RTA1:/RTA2:
+  gleichzeitig getestet). BeginIO stellt alles in den Unit-Port; Lesen
+  wartet in einer Liste, die Unit füllt sie aus einem 8-KB-Ringpuffer.
+  AbortIO findet Requests über private io_Flags-Bits (im Port / in der
+  Liste) unter Forbid. Der letzte CloseDevice schickt eine Quit-Nachricht
+  und wartet; die Unit legt auf und antwortet unter Forbid.
+* **Kein decnet.library-Aufruf für Daten:** die Library blockiert, ein
+  Terminal muss gleichzeitig lesen und schreiben. Das Device spricht
+  dnetds privates Protokoll (`dnmsg.h`) direkt: ein DNC_READ bleibt bei
+  dnetd liegen (Antwort auf netport), DNC_WRITE/DNC_CLOSE warten auf einem
+  zweiten Port. dnserver erlaubt Read und Write gleichzeitig pro Link. Ist
+  der Ringpuffer fast voll, wird kein neues Read gestellt (Flusskontrolle
+  zum Host). decnet.library nur für DnNodeAddr.
+* Bauen ohne Startup-Code wie dn-handler: `norun.c` muss die erste Datei
+  sein (Inline-Stubs aus den NDK-Headern landen sonst vor DevNoRun),
+  `miniprintf.c` für vsnprintf; libnix' `__mulsi3`/`__udivsi3` springen
+  über `UtilityBase` — DevInit öffnet utility.library. ≈ 15 KB.
+* **Fund beim Test mit Term:** Term antwortet im VT220-Modus auf `ESC [ c`
+  mit 8-Bit-CSI (`9B ? 62;… c`). Der CTERM-Kern kannte nur ESC als
+  Escape-Anfang, die Antwort landete als Text in der Zeile und
+  `SET TERMINAL/INQUIRE` scheiterte („unknown terminal type“). Jetzt werden
+  0x9B/0x8F als `ESC [`/`ESC O` gesammelt und 7-bittig an den Host
+  gegeben. Danach mit Term: INQUIRE → VT200_Series/ANSI_CRT, EVE, MONITOR.
+* Getestet 24.10. mit `dnttest` (Skript-Tester im Scratchpad: send/wait/
+  carrier/abort/close) auf A3000/OS 3.1 (uaenet) und A2000/68000/OS 2.04
+  (Installer-Skript + Test). Term 4.8 zeigt MONITOR-Rahmen als Buchstaben
+  (q/x/l), solange sein GFX-Font nicht eingerichtet ist — Term-Sache.
+  Mitschnitte `captures/2026-10-24-dnterm-*.pcap`.
+
 ## Verzeichnisaufbau
 
 ```
@@ -509,6 +553,7 @@ src/amiga/     dnetd.c sana2.c library/ (decnet.library)
 src/linux/     dnhost.c (AF_PACKET + pcap-Replay)
 src/apps/      dncopy dndir fotofix
 src/cterm/     CTERM-Client (portabel, dntool login / dnterm.device)
+src/term/      dnterm.device (serial.device-Ersatz mit Modem-Emulation)
 src/handler/   DN-Handler
 tests/         Kern-Tests, pcap-Fälle
 tools/         Amiberry-IPC, Typ-Helfer (vorhanden)

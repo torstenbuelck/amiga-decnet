@@ -1,0 +1,100 @@
+DECnet-Term for the Amiga
+=========================
+
+dnterm.device lets an Amiga terminal program log in to VAX/VMS and
+other DECnet hosts over the network, with CTERM (the protocol behind
+VMS "SET HOST"). The terminal program sees a modem on a serial port:
+it dials a node name instead of a phone number.
+
+
+Requirements
+------------
+- DECnet for the Amiga, installed and running (LIBS:decnet.library,
+  dnetd)
+- a terminal program that can use another device than serial.device,
+  e.g. Term or NComm
+- on the host: a CTERM server (VMS has one built in)
+
+
+Installation
+------------
+Double-click "Install-DECnet-Term". It copies dnterm.device to DEVS:.
+From the Shell: cd to this drawer, then
+
+  Installer Install-DECnet-Term
+
+To remove it, start Install-DECnet-Term again and choose "Remove".
+
+
+Using it
+--------
+In the terminal program's serial settings, choose the device
+dnterm.device and unit 0 instead of serial.device. Baud rate, parity
+and handshake do not matter. Then type in the terminal window:
+
+  ATD VAX1        log in to the node VAX1 (a name from your node
+                  list ENV:DECnet/nodes)
+  ATD 1.10        the same with the node's address
+
+"CONNECT" means the link is up, and the host asks for user name and
+password. When you log out, the device answers "NO CARRIER". A phone
+book entry works too: give the node name as the phone number; ATDT and
+ATDP in front of it are fine.
+
+Units 0 to 3 are separate lines: to keep two sessions open at the same
+time, start a second terminal program on unit 1.
+
+
+Modem commands
+--------------
+  ATD node   connect (any key while it dials stops it)
+  +++        back to command mode, the link stays up: one second
+             without typing before and after it
+  ATO        back online after +++
+  ATH        hang up (also: closing the device)
+  ATZ        hang up, settings back to E1 Q0 V1
+  ATE0/ATE1  command echo off/on
+  ATV0/ATV1  results as numbers/words
+  ATQ0/ATQ1  results on/off
+  ATI        version
+
+Other AT commands are accepted and ignored, so modem init strings do
+no harm. Results: OK (0), CONNECT (1), NO CARRIER (3), ERROR (4),
+NO DIALTONE (6, DECnet is not running), BUSY (7), NO ANSWER (8). A
+short reason comes before ERROR or NO CARRIER, e.g. "Unknown node" or
+"Node has no CTERM server".
+
+The carrier signal follows the link, so terminal programs show the
+online time and notice when the host logs you out.
+
+
+On VMS
+------
+CTERM tells VMS the terminal type VT200, but VMS does not treat the
+line as a screen terminal until the terminal itself has answered.
+Full-screen programs (EVE, MONITOR, ...) need this command after the
+login first:
+
+  $ SET TERMINAL/INQUIRE
+
+It is best placed in your LOGIN.COM. The terminal program answers the
+inquiry, so its emulation should be set to VT100 or VT220/ANSI.
+
+The line editing keys of the VMS command line (cursor keys, Delete,
+Ctrl-U, Ctrl-H, Ctrl-E) and Ctrl-Y work as on a VT terminal.
+
+
+Tested
+------
+Term 4.8 on AmigaOS 3.1 (Amiberry), with OpenVMS 7.2 hosts: login,
+DCL, EVE and MONITOR. Reports with other terminal programs and hosts
+are welcome.
+
+
+Licence
+-------
+GNU General Public License, version 2 or later. The CTERM messages
+follow dnprogs' dnlogin.
+
+Copyright (C) 2026  Torsten Bülck (tuti)
+https://forum.classic-computing.de

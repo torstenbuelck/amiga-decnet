@@ -1,6 +1,7 @@
 #!/bin/bash
 # Builds the installable DECnet package: dist/DECnet/ (the drawer the user
-# unpacks, with Install-DECnet) and dist/DECnet.lha.
+# unpacks, with Install-DECnet) and dist/DECnet.lha, and the terminal
+# add-on dist/DECnet-Term/ and dist/DECnet-Term.lha.
 #
 # In Amiberry: cd Transfer:DECnet/dist/DECnet, then
 # Installer Install-DECnet MINUSER AVERAGE
@@ -17,6 +18,7 @@ PKG="$OUT/DECnet"
 make -C "$DIR/src/amiga" >/dev/null
 make -C "$DIR/src/apps" >/dev/null
 make -C "$DIR/src/handler" >/dev/null
+make -C "$DIR/src/term" >/dev/null
 
 rm -rf "$OUT"
 mkdir -p "$PKG"/{C,L,S,Libs,Storage,Icons}
@@ -33,14 +35,23 @@ python3 "$DIR/tools/icons.py" "$ICONS" >/dev/null
 cp "$ICONS/DECnet.info" "$OUT/"                         # the drawer in the archive
 cp "$ICONS"/{Install-DECnet,ReadMe}.info "$PKG/"
 cp "$ICONS"/{Disk,Node,Dir,Text,Picture,File,DECnet}.info "$PKG/Icons/"   # DN: + installed drawer
+
+# the terminal add-on
+TPKG="$OUT/DECnet-Term"
+mkdir -p "$TPKG/Devs"
+cp "$DIR/installer/term/Install-DECnet-Term" "$DIR/installer/term/ReadMe" "$TPKG/"
+cp "$DIR/src/term/dnterm.device" "$TPKG/Devs/"
+cp "$ICONS/DECnet-Term.info" "$OUT/"
+cp "$ICONS"/{Install-DECnet-Term,ReadMe}.info "$TPKG/"
 rm -r "$ICONS"
 
 # AmigaDOS wants LF line ends and no trailing CR; make sure.
-for f in "$PKG/Install-DECnet" "$PKG/ReadMe" "$PKG"/S/* "$PKG"/Storage/*; do
+for f in "$PKG/Install-DECnet" "$PKG/ReadMe" "$PKG"/S/* "$PKG"/Storage/* \
+         "$TPKG/Install-DECnet-Term" "$TPKG/ReadMe"; do
 	sed -i 's/\r$//' "$f"
 done
 # Installer and ReadMe are UTF-8 in the repository; the Amiga uses ISO-8859-1.
-for f in "$PKG/Install-DECnet" "$PKG/ReadMe"; do
+for f in "$PKG/Install-DECnet" "$PKG/ReadMe" "$TPKG/Install-DECnet-Term" "$TPKG/ReadMe"; do
 	iconv -f UTF-8 -t ISO-8859-1 "$f" >"$f.tmp" && mv "$f.tmp" "$f"
 done
 
@@ -49,4 +60,6 @@ done
 # drawers itself.
 (cd "$OUT" && "$LHA" -ao5gq2 -0 DECnet.lha DECnet.info $(cd "$OUT" && find DECnet -type f | sort))
 python3 "$DIR/tools/lha_amigapath.py" "$OUT/DECnet.lha"
-ls -l "$OUT/DECnet.lha"
+(cd "$OUT" && "$LHA" -ao5gq2 -0 DECnet-Term.lha DECnet-Term.info $(cd "$OUT" && find DECnet-Term -type f | sort))
+python3 "$DIR/tools/lha_amigapath.py" "$OUT/DECnet-Term.lha"
+ls -l "$OUT/DECnet.lha" "$OUT/DECnet-Term.lha"

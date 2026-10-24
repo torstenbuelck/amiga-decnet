@@ -49,6 +49,8 @@
 
 #define ESC   0x1b
 #define DEL   0x7f
+#define CSI8  ((char)0x9b)       /* 8 bit control sequence introducer */
+#define SS3_8 ((char)0x8f)
 #define CTRL(c) ((c) & 0x1f)
 
 static const char *const os_names[] = {
@@ -290,6 +292,15 @@ static void key(struct cterm *c, char ch)
 	if (ch == ESC && c->esc_len == 0 && c->escape_proc) {
 		c->esc[c->esc_len++] = ch;
 		c->esc_state = 0;
+		return;
+	}
+	/* 8 bit CSI and SS3 (VT220 answers, Term's cursor keys): as ESC [
+	   and ESC O, so the host sees the same as from a 7 bit terminal */
+	if ((ch == CSI8 || ch == SS3_8) && c->esc_len == 0 && c->escape_proc) {
+		c->esc[0] = ESC;
+		c->esc[1] = ch == CSI8 ? '[' : 'O';
+		c->esc_len = 2;
+		c->esc_state = ch == CSI8 ? 15 : 20;
 		return;
 	}
 	if (c->esc_len) {
