@@ -41,8 +41,8 @@
 
 #define DEVNAME   "dnterm.device"
 #define VERSION   0
-#define REVISION  1
-#define IDSTRING  "dnterm.device 0.1 (24.10.2026)\r\n"
+#define REVISION  2
+#define IDSTRING  "dnterm.device 0.2 (24.10.2026)\r\n"
 
 #define NUNITS    4
 #define RBUFSIZE  8192          /* data for the terminal program */
@@ -133,6 +133,14 @@ static int is_term(struct DtUnit *u, UBYTE c)
 	return 0;
 }
 
+/* io_Status with the carrier bit (low active); only in IOExtSer sized
+   requests */
+static void set_status(struct DtUnit *u, struct IOExtSer *io)
+{
+	if (io->IOSer.io_Message.mn_Length >= sizeof(struct IOExtSer))
+		io->io_Status = u->status | (u->online ? 0 : 1 << 5);
+}
+
 static void reply_io(struct IOStdReq *io)
 {
 	if (!(io->io_Flags & IOF_QUICK))
@@ -188,7 +196,7 @@ static void deliver(struct DtUnit *u)
 			break;
 		Remove(&r->io_Message.mn_Node);
 		r->io_Flags &= ~IOF_INLIST;
-		io->io_Status = u->status | (u->online ? 0 : 1 << 5);
+		set_status(u, io);
 		reply_io(r);
 	}
 	Permit();
@@ -512,7 +520,7 @@ static void at_command(struct DtUnit *u, const char *s)
 			break;
 		case 'I':
 			number(&p);
-			say(u, "dnterm.device 0.1, DECnet CTERM");
+			say(u, "dnterm.device 0.2, DECnet CTERM");
 			break;
 		case 'O':
 			number(&p);
@@ -689,11 +697,13 @@ static void do_io(struct DtUnit *u, struct IOExtSer *io)
 		break;
 	case SDCMD_QUERY:
 		r->io_Actual = u->rcount;
-		io->io_Status = u->status | (u->online ? 0 : 1 << 5);
+		set_status(u, io);
 		break;
 	case SDCMD_SETPARAMS:
-		u->serflags = io->io_SerFlags;
-		memcpy(u->term, &io->io_TermArray, 8);
+		if (r->io_Message.mn_Length >= sizeof(struct IOExtSer)) {
+			u->serflags = io->io_SerFlags;
+			memcpy(u->term, &io->io_TermArray, 8);
+		}
 		break;
 	default:                        /* CMD_START, CMD_STOP, SDCMD_BREAK */
 		break;
@@ -991,14 +1001,14 @@ static void DevOpen(REG(a1, struct IOExtSer *io), REG(d0, ULONG unit), REG(d1, U
                     REG(a6, struct DtBase *base))
 {
 	struct DtUnit *u;
-	int shared = (io->io_SerFlags & SERF_SHARED) != 0;
+	/* short requests only from tools like Version (2.04 opens the device) */
+	int ext = io->IOSer.io_Message.mn_Length >= sizeof(struct IOExtSer);
+	int shared = ext && (io->io_SerFlags & SERF_SHARED) != 0;
 
 	(void)flags;
 	base->dev.dd_Library.lib_OpenCnt++;     /* no expunge while we wait */
 	io->IOSer.io_Error = IOERR_OPENFAIL;
-	if (unit >= NUNITS || io->IOSer.io_Message.mn_Length < sizeof(struct IOExtSer)) {
-		if (unit < NUNITS)
-			io->IOSer.io_Error = IOERR_BADLENGTH;
+	if (unit >= NUNITS) {
 		base->dev.dd_Library.lib_OpenCnt--;
 		return;
 	}
@@ -1018,7 +1028,8 @@ static void DevOpen(REG(a1, struct IOExtSer *io), REG(d0, ULONG unit), REG(d1, U
 		base->units[unit] = u;
 	}
 	u->u.unit_OpenCnt++;
-	set_defaults(io);
+	if (ext)
+		set_defaults(io);
 	io->IOSer.io_Unit = &u->u;
 	io->IOSer.io_Device = &base->dev;
 	io->IOSer.io_Error = 0;
@@ -1072,7 +1083,7 @@ static void DevBeginIO(REG(a1, struct IOExtSer *io), REG(a6, struct DtBase *base
 				done = 1;
 			}
 			if (done)
-				io->io_Status = u->status | (u->online ? 0 : 1 << 5);
+				set_status(u, io);
 		}
 		if (wake)
 			Signal(u->u.unit_MsgPort.mp_SigTask, 1UL << u->u.unit_MsgPort.mp_SigBit);

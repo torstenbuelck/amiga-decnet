@@ -1,4 +1,4 @@
-; $VER: Install-DECnet-Term 0.1 (24.10.2026)
+; $VER: Install-DECnet-Term 0.2 (24.10.2026)
 ;
 ; Installer script for dnterm.device, the CTERM terminal add-on of the
 ; Amiga DECnet endnode. Needs DECnet (LIBS:decnet.library) and AmigaOS 2.04.
@@ -10,7 +10,7 @@
 ; Copyright (C) 2026  Torsten Bülck (tuti)
 ; SPDX-License-Identifier: GPL-2.0-or-later
 
-(set #version "0.1")
+(set #version "0.2")
 (set @app-name "DECnet-Term")
 
 (if (< (/ (getversion) 65536) 37)
