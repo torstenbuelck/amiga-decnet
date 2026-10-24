@@ -53,7 +53,7 @@ struct Library *DECnetBase;
 struct Library *UtilityBase;
 
 
-static const char version[] = "$VER: dn-handler 0.8 (24.10.2026)";
+static const char version[] = "$VER: dn-handler 0.9 (24.10.2026)";
 
 #define VOLNAME     "DECnet Nodes"   /* not "DECnet": that would hide the DECnet: assign */
 #define CACHE_TICKS (10 * TICKS_PER_SECOND)
@@ -1447,7 +1447,11 @@ static LONG do_examine(struct mylock *l, struct FileInfoBlock *fib)
 	return DOSTRUE;
 }
 
-static LONG do_exnext(struct mylock *l, struct FileInfoBlock *fib, LONG *err)
+/* hide_icons: the caller is not Workbench. Virtual icons are only for
+   Workbench; "Copy DN:VAX1/#? RAM:", List or Directory Opus must not see
+   .info files that are not on the node. Asking for NAME.info by name still
+   works. */
+static LONG do_exnext(struct mylock *l, struct FileInfoBlock *fib, int hide_icons, LONG *err)
 {
 	LONG i = fib->fib_DiskKey;
 	struct dirlist *dl;
@@ -1471,6 +1475,8 @@ static LONG do_exnext(struct mylock *l, struct FileInfoBlock *fib, LONG *err)
 		*err = dl->error;
 		return DOSFALSE;
 	}
+	while (hide_icons && i < dl->n && dl->e[i].icon > 0)
+		i++;
 	if (i >= dl->n) {
 		dl->users--;
 		l->list = NULL;
@@ -1592,27 +1598,42 @@ static LONG do_end(struct myfile *f, LONG *err)
 
 /* MODE_NEWFILE. The file is created at the first Write() (text or binary
    is decided there) or at Close(). */
-/* Did a command (Shell, Run, Execute Command, a script) send pkt? Programs
-   started from Workbench have no CLI. Workbench itself runs as the
-   background CLI LoadWB made, so it is told apart by its command name. */
-static BOOL from_shell(struct DosPacket *pkt)
+/* Who sent pkt: SENDER_WORKBENCH (Workbench itself runs as the background
+   CLI LoadWB made, so it is told apart by its command name), SENDER_SHELL
+   (a command: Shell, Run, Execute Command, a script) or SENDER_OTHER (a
+   program started from Workbench, such as Directory Opus: no CLI). */
+#define SENDER_WORKBENCH 0
+#define SENDER_SHELL     1
+#define SENDER_OTHER     2
+static int sender(struct DosPacket *pkt)
 {
 	struct Task *t = pkt->dp_Port ? pkt->dp_Port->mp_SigTask : NULL;
 	struct CommandLineInterface *cli;
 	const char *name;
 	char cmd[64];
 
-	if (!t || t->tc_Node.ln_Type != NT_PROCESS || !((struct Process *)t)->pr_CLI)
-		return FALSE;
+	if (!t || t->tc_Node.ln_Type != NT_PROCESS)
+		return SENDER_OTHER;
+	name = t->tc_Node.ln_Name ? t->tc_Node.ln_Name : "";
+	if (!((struct Process *)t)->pr_CLI) {
+		dlog("sender '%s', no CLI", name);
+		return nc_ieq(name, "Workbench") ? SENDER_WORKBENCH : SENDER_OTHER;
+	}
 	cli = BADDR(((struct Process *)t)->pr_CLI);
 	cmd[0] = 0;
 	if (cli->cli_CommandName)
 		bstr_to_c(cli->cli_CommandName, cmd, sizeof cmd);
-	name = t->tc_Node.ln_Name ? t->tc_Node.ln_Name : "";
 	dlog("sender '%s', command '%s'", name, cmd);
 	if (strchr(cmd, ':') && !strchr(cmd, '/'))
 		strcpy(cmd, strchr(cmd, ':') + 1);
-	return !nc_ieq(name, "Workbench") && !nc_ieq(path_last(cmd), "Workbench");
+	return nc_ieq(name, "Workbench") || nc_ieq(path_last(cmd), "Workbench") ?
+	       SENDER_WORKBENCH : SENDER_SHELL;
+}
+
+/* Did a command (not Workbench or a program started from it) send pkt? */
+static BOOL from_shell(struct DosPacket *pkt)
+{
+	return sender(pkt) == SENDER_SHELL;
 }
 
 static LONG do_findoutput(struct DosPacket *pkt, struct FileHandle *fh, struct mylock *base,
@@ -1933,7 +1954,8 @@ void handler_main(void)
 			res1 = do_examine(lock_of(pkt->dp_Arg1), BADDR(pkt->dp_Arg2));
 			break;
 		case ACTION_EXAMINE_NEXT:
-			res1 = do_exnext(lock_of(pkt->dp_Arg1), BADDR(pkt->dp_Arg2), &res2);
+			res1 = do_exnext(lock_of(pkt->dp_Arg1), BADDR(pkt->dp_Arg2),
+			                 sender(pkt) != SENDER_WORKBENCH, &res2);
 			break;
 		case ACTION_FINDINPUT:
 			res1 = do_findinput(pkt, &res2);

@@ -356,6 +356,15 @@ auf echter Hardware nachgetestet):
   lesen (Auflisten, Einzelprüfung bei Lock/Examine), immer Blocking an;
   Öffnen, Schreiben, Löschen, Umbenennen und dncopy beachten NOBLOCK. dndir
   behält NOBLOCK in der Vorlage, wirkungslos.
+* **Virtuelle Icons nur für die Workbench** (dn-handler 0.9). `Copy
+  DN:HOWIE/getandplay#? Work:slot` brachte eine `.info` mit, die es auf HOWIE
+  nicht gibt: die Verzeichnisliste (Cache, für alle Aufrufer gleich) enthält
+  die virtuellen Icons. ExNext liefert sie jetzt nur noch dem Prozess
+  „Workbench“ (`sender()`: Taskname oder CLI-Befehlsname); Shell-Befehle und
+  Programme ohne CLI wie Directory Opus 4.12 (zeigte und kopierte sie) sehen
+  sie nicht. Nach `NAME.info` gezielt fragen geht für alle; echte `.info`
+  auf dem Knoten bleiben sichtbar. Icon-Schreibzugriffe verwirft der Handler
+  weiter für alles außer Shell-Befehlen.
 * **NSP-Flusssteuerung: vorerst nicht** (Entscheidung 24.10.2026, nach dem
   A2000-Test neu bewerten). Dateiübertragungen von FOTOFX auf dem A3000:
   1764/1768/1767 Segmente mit 2/1/2 Wiederholungen (0,1 %), keine NAKs;

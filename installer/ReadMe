@@ -126,7 +126,8 @@ Subdirectories are drawers: DN:VAX1/A/B is [.A.B]. DN: shows its own
 disk icon, an icon for every node and, inside a node, an icon for every
 file and directory, chosen by the file's extension (text, picture or
 other file). These icons are made up by DN:; nothing is written to the
-node. Icons the Workbench saves there (Information, Snapshot, dragging
+node. Only Workbench sees them in a directory; Shell commands like
+"Copy DN:VAX1/#? RAM:", List or file managers do not get them. Icons the Workbench saves there (Information, Snapshot, dragging
 a file) are dropped. To give a file a real icon on the node, copy one
 in the Shell:
 
