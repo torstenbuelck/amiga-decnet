@@ -139,8 +139,43 @@ static void reply_io(struct IOStdReq *io)
 		ReplyMsg(&io->io_Message);
 }
 
-/* Fill the waiting reads from the buffer. A read is done when it has
-   io_Length bytes, a NUL with io_Length -1, or an EOF character. */
+/* Move buffered bytes into a read; call under Forbid. The read is done
+   when it has io_Length bytes, a NUL with io_Length -1, or an EOF
+   character. */
+static int fill(struct DtUnit *u, struct IOStdReq *r)
+{
+	LONG want = (LONG)r->io_Length;
+	int done = want == 0;
+
+	while (!done && u->rcount) {
+		UBYTE c = u->rbuf[u->rtail];
+		u->rtail = (u->rtail + 1) % RBUFSIZE;
+		u->rcount--;
+		((UBYTE *)r->io_Data)[r->io_Actual++] = c;
+		if ((want > 0 && (LONG)r->io_Actual >= want) || (want < 0 && c == 0) ||
+		    ((u->serflags & SERF_EOFMODE) && is_term(u, c)))
+			done = 1;
+	}
+	return done;
+}
+
+/* Would a read be done with what is buffered now? Under Forbid. */
+static int enough(struct DtUnit *u, struct IOStdReq *r)
+{
+	LONG want = (LONG)r->io_Length;
+	ULONG i, p;
+
+	if (want == 0 || (want > 0 && u->rcount >= (ULONG)want))
+		return 1;
+	for (i = 0, p = u->rtail; i < u->rcount; i++, p = (p + 1) % RBUFSIZE) {
+		UBYTE c = u->rbuf[p];
+		if ((want < 0 && c == 0) || ((u->serflags & SERF_EOFMODE) && is_term(u, c)))
+			return 1;
+	}
+	return 0;
+}
+
+/* Fill the waiting reads from the buffer. */
 static void deliver(struct DtUnit *u)
 {
 	struct IOExtSer *io;
@@ -148,19 +183,8 @@ static void deliver(struct DtUnit *u)
 	Forbid();
 	while ((io = (struct IOExtSer *)u->reads.lh_Head)->IOSer.io_Message.mn_Node.ln_Succ) {
 		struct IOStdReq *r = &io->IOSer;
-		LONG want = (LONG)r->io_Length;
-		int done = want == 0;
 
-		while (!done && u->rcount) {
-			UBYTE c = u->rbuf[u->rtail];
-			u->rtail = (u->rtail + 1) % RBUFSIZE;
-			u->rcount--;
-			((UBYTE *)r->io_Data)[r->io_Actual++] = c;
-			if ((want > 0 && (LONG)r->io_Actual >= want) || (want < 0 && c == 0) ||
-			    ((u->serflags & SERF_EOFMODE) && is_term(u, c)))
-				done = 1;
-		}
-		if (!done)
+		if (!fill(u, r))
 			break;
 		Remove(&r->io_Message.mn_Node);
 		r->io_Flags &= ~IOF_INLIST;
@@ -172,6 +196,7 @@ static void deliver(struct DtUnit *u)
 
 static void put(struct DtUnit *u, const char *buf, long n)
 {
+	Forbid();                       /* BeginIO reads the buffer too */
 	while (n-- > 0) {
 		if (u->rcount >= RBUFSIZE) {
 			u->status |= IO_STATF_OVERRUN;
@@ -181,6 +206,7 @@ static void put(struct DtUnit *u, const char *buf, long n)
 		u->rhead = (u->rhead + 1) % RBUFSIZE;
 		u->rcount++;
 	}
+	Permit();
 	deliver(u);
 }
 
@@ -644,12 +670,16 @@ static void do_io(struct DtUnit *u, struct IOExtSer *io)
 		do_write(u, r);
 		break;
 	case CMD_CLEAR:
+		Forbid();
 		u->rhead = u->rtail = u->rcount = 0;
+		Permit();
 		u->status &= ~IO_STATF_OVERRUN;
 		break;
 	case CMD_RESET:
 		abort_reads(u);
+		Forbid();
 		u->rhead = u->rtail = u->rcount = 0;
+		Permit();
 		u->status = 0;
 		u->serflags = 0;
 		memset(u->term, 0, sizeof u->term);
@@ -879,7 +909,7 @@ static struct DtUnit *start_unit(int num)
 	port = CreateMsgPort();
 	u->proc = port ? CreateNewProcTags(NP_Entry, (ULONG)unit_main,
 	                                   NP_Name, (ULONG)u->procname,
-	                                   NP_Priority, 0,
+	                                   NP_Priority, 1,  /* before busy-polling callers */
 	                                   NP_StackSize, 8192,
 	                                   TAG_DONE) : NULL;
 	if (!u->proc) {
@@ -1019,6 +1049,38 @@ static void DevBeginIO(REG(a1, struct IOExtSer *io), REG(a6, struct DtBase *base
 	(void)base;
 	r->io_Error = 0;
 	r->io_Message.mn_Node.ln_Type = NT_MESSAGE;
+
+	/* Like serial.device: a quick read that the buffer satisfies, or a
+	   quick query, is done at once in the caller's task. Programs that
+	   poll in a loop (VAXterm) depend on it. Only when nothing else of
+	   this unit waits, so the order stays. */
+	if ((r->io_Flags & IOF_QUICK) &&
+	    (r->io_Command == CMD_READ || r->io_Command == SDCMD_QUERY)) {
+		int done = 0, wake = 0;
+		Forbid();
+		if (IsListEmpty(&u->reads) && IsListEmpty(&u->u.unit_MsgPort.mp_MsgList)) {
+			if (r->io_Command == SDCMD_QUERY) {
+				r->io_Actual = u->rcount;
+				done = 1;
+			} else if (enough(u, r)) {
+				wake = u->rcount > RBUFSIZE - 2 * NETBUF;
+				r->io_Actual = 0;
+				fill(u, r);
+				/* the unit holds back its network read while the
+				   buffer is full; let it look again */
+				wake = wake && u->rcount <= RBUFSIZE - 2 * NETBUF;
+				done = 1;
+			}
+			if (done)
+				io->io_Status = u->status | (u->online ? 0 : 1 << 5);
+		}
+		if (wake)
+			Signal(u->u.unit_MsgPort.mp_SigTask, 1UL << u->u.unit_MsgPort.mp_SigBit);
+		Permit();
+		if (done)
+			return;                 /* IOF_QUICK stays set: no reply */
+	}
+
 	switch (r->io_Command) {
 	case CMD_READ: case CMD_WRITE: case CMD_CLEAR: case CMD_RESET: case CMD_FLUSH:
 	case CMD_START: case CMD_STOP:

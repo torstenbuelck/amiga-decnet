@@ -539,6 +539,18 @@ auf echter Hardware nachgetestet):
   `SET TERMINAL/INQUIRE` scheiterte („unknown terminal type“). Jetzt werden
   0x9B/0x8F als `ESC [`/`ESC O` gesammelt und 7-bittig an den Host
   gegeben. Danach mit Term: INQUIRE → VT200_Series/ANSI_CRT, EVE, MONITOR.
+* **Quick-IO (Fund mit VAXterm 2.4, Fish-Disk, Aminet comm/term/VAXterm):**
+  VAXterm pollt in einer Schleife ohne Wait() und liest Zeichen für
+  Zeichen mit IOF_QUICK. Weil das Device jeden Request in den Unit-Port
+  stellte, kam der Unit-Prozess (gleiche Priorität) nur am Ende jeder
+  Zeitscheibe dran: etwa eine Zeile pro Sekunde. Jetzt erledigt BeginIO
+  wie serial.device ein CMD_READ mit IOF_QUICK, das der Puffer erfüllt,
+  und SDCMD_QUERY sofort im Aufrufer (nur wenn keine anderen Requests der
+  Unit warten; Ringpuffer überall unter Forbid; leert ein Quick-Read den
+  vollen Puffer, wird die Unit für das nächste Netz-Read geweckt). Der
+  Unit-Prozess läuft mit Priorität 1. VAXterm öffnet fest
+  `serial.device` Unit 1 — eine Kopie mit dem gleich langen String
+  `dnterm.device` läuft: Login, INQUIRE, MONITOR mit DEC-Linien.
 * Getestet 24.10. mit `dnttest` (Skript-Tester im Scratchpad: send/wait/
   carrier/abort/close) auf A3000/OS 3.1 (uaenet) und A2000/68000/OS 2.04
   (Installer-Skript + Test). Term 4.8 zeigt MONITOR-Rahmen als Buchstaben
