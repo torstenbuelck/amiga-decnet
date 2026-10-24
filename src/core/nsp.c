@@ -115,6 +115,11 @@ static struct dn_link links[DN_MAXLINKS];
 static dn_u16 next_locaddr = 0x2101;
 static dn_u8 msgbuf[1600];
 
+void dn_seed_links(dn_u16 seed)
+{
+	next_locaddr = seed;            /* link_alloc skips 0 and used ones */
+}
+
 static void *xalloc(unsigned n) { return dn_g.env.alloc(dn_g.env.ctx, n); }
 static void xfree(void *p) { if (p) dn_g.env.free(dn_g.env.ctx, p); }
 

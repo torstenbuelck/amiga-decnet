@@ -92,6 +92,11 @@ struct dn_connreq {
 
 /* setup / runtime */
 int  dn_init(const struct dn_env *env, dn_u16 address);
+/* where local link addresses start (default 0x2102); a different value
+   at every start keeps a restarted node from reusing the address of a
+   link the other end still believes open, which makes it drop the new
+   connect as a duplicate */
+void dn_seed_links(dn_u16 seed);
 void dn_input(const dn_u8 *srcmac, const dn_u8 *dstmac, const dn_u8 *payload,
               unsigned len);
 void dn_tick(unsigned ms);

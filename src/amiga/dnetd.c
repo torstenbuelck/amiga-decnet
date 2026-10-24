@@ -365,6 +365,7 @@ int main(void)
 	env.log = env_log;
 	env.loglevel = args[3] ? DN_LOG_DEBUG : DN_LOG_INFO;
 	dn_init(&env, addr);
+	dn_seed_links((dn_u16)(last.tv_secs ^ (last.tv_micro >> 4)));
 	dn_mirror_init();
 	srvsig = srv_init();
 	if (!srvsig) {

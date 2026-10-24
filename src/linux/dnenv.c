@@ -142,6 +142,7 @@ int dnenv_open(const char *ifname, dn_u16 addr, int verbose)
 	env.log = logmsg;
 	env.loglevel = verbose > 1 ? DN_LOG_DEBUG : verbose ? DN_LOG_INFO : DN_LOG_ERR;
 	dn_init(&env, addr);
+	dn_seed_links((dn_u16)(time(NULL) ^ (getpid() << 4)));
 
 	signal(SIGINT, on_signal);
 	signal(SIGTERM, on_signal);
