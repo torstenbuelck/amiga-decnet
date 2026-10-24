@@ -366,7 +366,8 @@ auf echter Hardware nachgetestet):
   es stört: wartet dnetd auf ein DC oder ein Lückensegment, nach ~50 ms einen
   harmlosen Frame senden (z. B. ein zusätzliches Endnode-Hello), um den
   Treiber anzustoßen — erst am A3000 prüfen, ob Senden überhaupt freigibt.
-  Gehört in die Treiber-Kompatibilitätsliste (Treiberversion noch notieren).
+  Gehört in die Treiber-Kompatibilitätsliste: a2065.device 2.16 auf der
+  Ameristar-Karte (MAC 00-00-9F-…) im A3000.
 
 ### dncopy PROGRESS (Stand 23.10.2026)
 * `PROGRESS=WINDOW`: Fenster auf dem Workbench-Schirm (nur Intuition/Graphics
