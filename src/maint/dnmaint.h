@@ -59,6 +59,8 @@ struct msession {
 	long            inlen, inpos;   /* input not yet given to the Shell */
 	int             handles;        /* file handles open on conport */
 	BOOL            shell_gone;     /* the Shell has ended (handles 0) */
+	BOOL            shell_failed;   /* Execute() could not start it */
+	BOOL            launcher;       /* the process calling Execute() runs */
 };
 
 /* dnmaint.c */

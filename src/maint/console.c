@@ -25,6 +25,7 @@
 
 #include "dnmaint.h"
 
+#define STOP_TICKS (20 * 50)    /* con_stop waits this long for the Shell */
 #define CSI 0x9b
 #define ESC 0x1b
 #ifndef ID_CON
@@ -122,6 +123,8 @@ void con_packet(struct msession *s, struct DosPacket *dp)
 		if (!s->sigtask)
 			s->sigtask = sender(dp);
 		ReplyPkt(dp, DOSTRUE, 0);
+		if (s->cth.verbose)
+			Printf("dnmaint: console opened (%ld open)\n", (LONG)s->handles);
 		break;
 	case ACTION_END:
 		/* one handle on us closed; the Shell is gone when the last
@@ -129,6 +132,8 @@ void con_packet(struct msession *s, struct DosPacket *dp)
 		ReplyPkt(dp, DOSTRUE, 0);
 		if (s->handles > 0 && --s->handles == 0)
 			s->shell_gone = TRUE;
+		if (s->cth.verbose)
+			Printf("dnmaint: console closed (%ld open)\n", (LONG)s->handles);
 		break;
 	case ACTION_READ:
 		if (s->readpkt) {
@@ -255,6 +260,7 @@ void con_interrupt(struct msession *s, int ch)
 void con_stop(struct msession *s)
 {
 	struct Message *m;
+	int i;
 
 	if (!s->conport)
 		return;
@@ -262,13 +268,24 @@ void con_stop(struct msession *s)
 	con_serve(s);                   /* waiting read: EOF */
 	if (s->handles > 0 && s->sigtask)
 		Signal(s->sigtask, SIGBREAKF_CTRL_C | SIGBREAKF_CTRL_D);
-	while (s->handles > 0) {
-		WaitPort(s->conport);
+	for (i = 0; (s->handles > 0 || s->launcher) && i < STOP_TICKS / 5; i++) {
 		while ((m = GetMsg(s->conport)) != NULL)
 			con_packet(s, (struct DosPacket *)m->mn_Node.ln_Name);
+		if (s->handles > 0 || s->launcher)
+			Delay(5);
 	}
 	while ((m = GetMsg(s->conport)) != NULL)
 		con_packet(s, (struct DosPacket *)m->mn_Node.ln_Name);
+	if (s->handles > 0 || s->launcher) {
+		/* a handle is still open (a command that neither reads nor
+		   stops): deleting the port would crash whoever uses it later.
+		   Leave it behind, ignoring messages: that one hangs instead */
+		Printf("dnmaint: %ld console handle(s) still open, port left behind\n",
+		       (LONG)s->handles);
+		s->conport->mp_Flags = PA_IGNORE;
+		s->conport = NULL;
+		return;
+	}
 	DeleteMsgPort(s->conport);
 	s->conport = NULL;
 }
@@ -308,37 +325,79 @@ static void shell_startup(struct msession *s)
 	s->inpos = 0;
 }
 
+/*
+ * The Shell is started the way Execute() documents for every OS
+ * version: an empty command and an interactive input handle give an
+ * interactive Shell like NewShell (System("") with SYS_Asynch only from
+ * V47 on; before, it runs the empty command and ends). The Shell opens
+ * its output itself ("*" on our port, as pr_ConsoleTask comes from the
+ * input handle) and closes it when it ends.
+ *
+ * Execute() does not return before the Shell has ended, and the Shell
+ * talks to the console all the time, so it must not run in this
+ * process, which is the only one answering: a small process of its own
+ * calls it and closes the input afterwards. One session at a time, so
+ * the handover is static.
+ */
+static struct msession *launch_s;
+static BPTR launch_in;
+static struct Task *launch_parent;
+
+static void launcher(void)
+{
+	struct msession *s = launch_s;
+	BPTR dir, old = 0;
+	LONG ok;
+
+	/* the Shell starts in SYS:, not wherever dnmaint was started */
+	dir = Lock((STRPTR)"SYS:", ACCESS_READ);
+	if (dir)
+		old = CurrentDir(dir);
+	ok = Execute((STRPTR)"", launch_in, 0);
+	if (dir)
+		UnLock(CurrentDir(old));
+	/* Execute() returns when the Shell has ended (or could not start).
+	   The Shell has closed the output it opened; the input is ours.
+	   This process may close it: the session answers ACTION_END */
+	Close(launch_in);
+	/* last: under Forbid() until this process is gone, so dnmaint
+	   (whose code this is) cannot end before */
+	Forbid();
+	if (!ok)
+		s->shell_failed = TRUE;
+	s->launcher = FALSE;
+	if (s->conport)                 /* wake the session up */
+		Signal(launch_parent, 1UL << s->conport->mp_SigBit);
+}
+
 /* start the Shell with our handler as console */
 int shell_start(struct msession *s)
 {
-	BPTR in, out;
+	BPTR in;
 
 	s->handles = 0;
 	s->shell_gone = FALSE;
+	s->shell_failed = FALSE;
 	shell_startup(s);
 	in = con_fh(s);
-	out = con_fh(s);
-	if (!in || !out)
+	if (!in)
 		goto fail;
-	/* asynchronous: the Shell closes both handles when it ends, which
-	   arrives here as ACTION_END */
-	if (SystemTags((STRPTR)"",
-	               SYS_Input, in,
-	               SYS_Output, out,
-	               SYS_Asynch, TRUE,
-	               SYS_UserShell, TRUE,
-	               NP_ConsoleTask, (ULONG)s->conport,
-	               NP_WindowPtr, -1,
-	               NP_Name, (ULONG)"dnmaint Shell",
-	               TAG_DONE) == -1)
+	launch_s = s;
+	launch_in = in;
+	launch_parent = FindTask(NULL);
+	s->launcher = TRUE;
+	if (!CreateNewProcTags(NP_Entry, (ULONG)launcher,
+	                       NP_Name, (ULONG)"dnmaint launcher",
+	                       NP_StackSize, 8192,
+	                       NP_WindowPtr, -1,
+	                       TAG_DONE))
 		goto fail;
 	return 0;
 fail:
 	/* not Close(): that would send ACTION_END to ourselves */
 	if (in)
 		FreeDosObject(DOS_FILEHANDLE, BADDR(in));
-	if (out)
-		FreeDosObject(DOS_FILEHANDLE, BADDR(out));
+	s->launcher = FALSE;
 	s->handles = 0;
 	s->inlen = s->inpos = 0;
 	return -1;

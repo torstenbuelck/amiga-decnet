@@ -171,7 +171,10 @@ int session_run(struct msession *s)
 		case MS_SHELL:
 			/* the terminal may unbind at once; the Shell goes on
 			   until it has seen EOF (con_stop in session_end) */
-			if (s->shell_gone || s->cth.unbound)
+			if (s->shell_failed) {
+				say(s, "Cannot start a Shell.\n");
+				s->state = MS_DONE;
+			} else if (s->shell_gone || s->cth.unbound)
 				s->state = MS_DONE;
 			break;
 		}

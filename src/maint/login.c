@@ -46,7 +46,6 @@ int login_start(struct msession *s)
 int login_input(struct msession *s, const char *buf, long n, int term)
 {
 	(void)term;                     /* every terminator ends an attempt */
-	say(s, "\n");                   /* the secret read did not echo it */
 	if (login_check(s->cfg, buf, n)) {
 		say(s, "Welcome.\n\n");
 		return 1;
