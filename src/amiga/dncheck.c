@@ -14,8 +14,10 @@
  *      within WAIT seconds (default 20, 0 skips the test; skipped as well
  *      while dnetd runs, which takes the frames itself)
  *
- * CLOSEHINT ends the output with a line asking to close the window; the
- * installer sets it, as it runs dncheck in a CON: window with WAIT.
+ * CLOSEHINT ends the output with a line asking to close the window and
+ * then waits until it is closed (EOF on the console), so that the
+ * installer, which runs dncheck in a CON: window with CLOSE, goes on only
+ * after the user has read the result.
  *
  * A SANA-II unit can be configured only once per boot, and whoever comes
  * first sets the address. Run dncheck before AmiTCP or any other network
@@ -54,7 +56,7 @@
 #define DN_ETHERTYPE 0x6003
 #define FRAMELEN     1518
 
-static const char version[] = "$VER: dncheck 0.4 (23.10.2026)";
+static const char version[] = "$VER: dncheck 0.5 (24.10.2026)";
 
 static const UBYTE all_endnodes[6] = { 0xab, 0x00, 0x00, 0x04, 0x00, 0x00 };
 
@@ -372,5 +374,12 @@ out:
 			s2buff_free(buffertags);
 	}
 	FreeArgs(rda);
+	if (args[4] && IsInteractive(Output())) {
+		/* CON: answers reads on the output handle too; the close gadget
+		   ends a pending read with EOF */
+		char c[16];
+		while (Read(Output(), c, sizeof c) > 0)
+			;
+	}
 	return rc;
 }

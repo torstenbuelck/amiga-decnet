@@ -41,7 +41,8 @@
 #define RTO_MIN         500UL
 #define RTO_MAX         30000UL
 #define RXWINDOW        64      /* how far ahead of rx_last a segment is kept */
-#define RXCACHE         16      /* out-of-order segments kept per link */
+#define RXCACHE         32      /* out-of-order segments kept per link (FOTOFX
+                                   bursts 20) */
 #define NAK_MS          200UL   /* gap age before the first NAK */
 #define NAK_REPEAT_MS   1000UL
 
@@ -554,16 +555,34 @@ static void deliver(struct dn_link *l, const dn_u8 *p, unsigned len, dn_u8 flags
 	}
 }
 
-/* Keeps a segment that arrived ahead of rx_last + 1. */
+/* Keeps a segment that arrived ahead of rx_last + 1. When the cache is
+   full, the segment furthest ahead makes room for a nearer one: a sender
+   that resends its last burst before the missing segments (FOTOFX does)
+   fills the cache with late segments, and the ones that close the gap
+   must still get in. */
 static void rxq_add(struct dn_link *l, dn_u16 num, dn_u8 flags, const dn_u8 *p, unsigned len)
 {
-	struct rxseg *r;
+	struct rxseg *r, **pp, **far = 0;
+	dn_u16 d = SEQ(num - l->rx_last), fd = 0;
 
-	if (SEQ(num - l->rx_last) > RXWINDOW || l->rxqlen >= RXCACHE)
+	if (d > RXWINDOW)
 		return;
-	for (r = l->rxq; r; r = r->next)
+	for (pp = &l->rxq; (r = *pp) != 0; pp = &r->next) {
 		if (r->num == num)
 			return;                 /* have it already */
+		if (SEQ(r->num - l->rx_last) > fd) {
+			fd = SEQ(r->num - l->rx_last);
+			far = pp;
+		}
+	}
+	if (l->rxqlen >= RXCACHE) {
+		if (!far || fd <= d)
+			return;
+		r = *far;
+		*far = r->next;
+		l->rxqlen--;
+		xfree(r);
+	}
 	r = xalloc(sizeof *r + len);
 	if (!r)
 		return;

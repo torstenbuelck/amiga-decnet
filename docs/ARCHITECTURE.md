@@ -157,11 +157,12 @@ Kopie der Festplatte: `CONFIG=~/Amiberry/Configurations/DECnet-InstTest.uae
 
 * **Ziel-Layout**: `<Schublade>/DECnet/{C,L,S,Storage}`, `LIBS:decnet.library`,
   `ENVARC:DECnet/nodes` (wird nie überschrieben), Gerät und Unit als
-  `ENVARC:DECnet/{Device,Unit}` (Vorgaben fürs nächste Update, per `getenv`).
-  **Adresse und Knotenname haben nie eine Vorgabe** (Entscheidung Torsten,
-  23.10.2026): Sie werden in jedem Modus und bei jedem Update neu eingegeben,
-  damit kein geklontes System und kein unbedachter Klick eine Adresse doppelt
-  ins Netz bringt. Im Paket stehen auch keine echten Adressen oder Knotennamen
+  `ENVARC:DECnet/{Device,Unit,Address,Name}` (Vorgaben fürs nächste Update,
+  per `getenv`). **Eine Neuinstallation gibt Adresse und Knotennamen nie vor**
+  (Entscheidung Torsten, 23.10.2026), damit kein unbedachter Klick eine
+  Adresse doppelt ins Netz bringt. Nur beim Update (Zuweisung `DECnet:`
+  vorhanden) stehen die bisherigen Werte als Vorgabe da (Wunsch Torsten,
+  24.10.2026). Im Paket stehen auch keine echten Adressen oder Knotennamen
   als Beispiele. `DECnet-Start` schreibt der Installer: `.def`-Zeilen +
   `S/DECnet-Start.body`. Ein Update erkennt der Installer an der Zuweisung `DECnet:`.
 * **Start vor TCP/IP**: `C/dnstartup DIR=x` setzt den Block
@@ -171,8 +172,10 @@ Kopie der Festplatte: `CONFIG=~/Amiberry/Configurations/DECnet-InstTest.uae
   `dnstartup REMOVE` entfernt den Block, die alte Datei bleibt als `.bak` erhalten. Netzsoftware
   in der Startup-Sequence vor der User-Startup → RC 5 + Warnung.
   (Das Installer-eigene `(startup)` kann nur anhängen und nicht entfernen.)
-* **dncheck** läuft mit Ausgabe in `CON:…/CLOSE/WAIT`. `(run)` wartet
-  auf das Programm, nicht auf das Fenster. Läuft dnetd schon, überspringt dncheck
+* **dncheck** läuft mit Ausgabe in `CON:…/CLOSE`. `(run)` wartet nur
+  auf das Programm, nicht auf das Fenster; deshalb liest dncheck 0.5 mit
+  CLOSEHINT am Ende vom Ausgabe-Handle (CON: beantwortet das), bis das
+  Schließgadget EOF liefert. Erst dann geht der Installer weiter. Läuft dnetd schon, überspringt dncheck
   den Empfangstest (dnetd nimmt die Pakete selbst; bei uaenet gibt es nur eine
   Lese-Queue).
 * **Einsteiger-Modus** beantwortet alle Fragen mit der Vorgabe → Endlosschleife
@@ -323,6 +326,28 @@ auf echter Hardware nachgetestet):
   Langwort ausgerichtetes Romtag. Jetzt `__attribute__((aligned(4)))`; gegen
   die unausgerichtete Fassung per A/B-Test bestätigt. Das Paket aus 770c637
   (95379 Bytes) ist damit unbrauchbar.
+
+### Nachtest auf dem A3000 (24.10.2026)
+
+* **HOWIE**: 102 KB per Workbench in 1,2 s, per `dncopy … PROGRESS=WINDOW`
+  in knapp 1 s, ohne Wiederholung (vorher mit dnetd 0.3: 19 s Hänger nach
+  einem verlorenen Segment). Für einmal Öffnen + Ziehen 4 statt 7
+  FAL-Verbindungen. FOTOFX: ADF mit 90 KB/s.
+* **FOTOFX-Verzeichnis ohne Blocking** kommt als ein winziges Segment pro
+  Eintrag (30–60 Bytes) in Salven zu 20, praktisch ohne Abstand. Davon
+  verliert der a2065 einige und vertauscht manchmal eins. FOTOFX ignoriert
+  NAKs, wiederholt nach ~2 s und schickt dabei zuerst die *letzte* Salve
+  noch einmal, erst später die fehlenden Segmente. Das füllte den Cache
+  (16) mit späten Segmenten; die Lückenfüller wurden dann abgewiesen, FOTOFX
+  schickte sie nie wieder und gab den Link auf (dndir-Timeout). dnetd 0.5:
+  Cache 32, und bei vollem Cache weicht das am weitesten vorauslaufende
+  Segment einem näheren (nsptest-Fall). `dndir FOTOFX MUSTER/* NOBLOCK`:
+  2 min 19 s / Timeout → 24 s. **Mit Blocking** packt FOTOFX die Einträge in
+  26 große Segmente: kein Verlust, ~7 s. Der FOTOFX-Fehler mit Blocking
+  betrifft nur ACCESS auf fehlende Dateien; NOBLOCK als Vorgabe für FOTOFX
+  ist daher zu überdenken.
+* **Kleinigkeit offen**: AMI wiederholte einmal ein Disconnect Initiate,
+  obwohl HOWIE es nach 13 ms bestätigt hatte (HOWIE dann „no link“).
 
 ### dncopy PROGRESS (Stand 23.10.2026)
 * `PROGRESS=WINDOW`: Fenster auf dem Workbench-Schirm (nur Intuition/Graphics

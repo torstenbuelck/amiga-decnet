@@ -157,6 +157,16 @@ int main(void)
 	seg(7, "g");
 	expect("segment far ahead dropped", "abcdefg");
 
+	/* cache full of late segments (FOTOFX resends its last burst first):
+	   the segments that close the gap must still be kept */
+	for (i = 10; i < 50; i++) {
+		char t[2] = { (char)('A' + i % 26), 0 };
+		seg(i, t);
+	}
+	seg(9, "i");
+	seg(8, "h");
+	expect_ack("gap fillers kept although the cache was full", 0x8000 | 40);
+
 	dn_shutdown();
 	printf(fails ? "%d FAILED\n" : "all passed\n", fails);
 	return fails != 0;

@@ -129,15 +129,15 @@
 		))
 
 		(message "Now dncheck tests the card with the DECnet address " #addr ".\n\n"
-		         "It needs up to 20 seconds and shows its result in a window, "
-		         "which stays open until you close it.\n\n"
+		         "It needs up to 20 seconds and shows its result in a window. "
+		         "The installation goes on when you close that window.\n\n"
 		         "Note: if AmiTCP or another TCP/IP stack is running now, the card "
 		         "already has its address. DECnet still works after the next "
 		         "reboot, when it starts before TCP/IP."
 		         (help "dncheck checks that the driver accepts the DECnet station "
 		               "address AA-00-04-00-xx-xx and that DECnet frames arrive."))
 		(set #rc (run (cat "C/dncheck DEVICE=\"" #device "\" UNIT=" #unit " ADDR=" #addr " CLOSEHINT"
-		                   " >CON:0/380/640/170/DECnet-Check/CLOSE/WAIT")))
+		                   " >CON:0/380/640/170/DECnet-Check/CLOSE")))
 		(set #again 0)
 		(if (= #rc 5)
 			(set #again (NOT (askbool
@@ -177,6 +177,7 @@
 (procedure P_INSTALL
 	; ---- where
 	(set #target (getassign "DECnet"))
+	(set #update (<> #target ""))
 	(if (= #target "")
 		(
 			(set #dest (askdir
@@ -193,11 +194,18 @@
 	)
 	(set @default-dest #target)
 
-	; ---- device and unit of the last installation, if any. Address and name
-	; never get a default: a copied system or a careless click must not put a
-	; second node with the same address on the network.
+	; ---- answers of the last installation, if any. Address and name get a
+	; default only when updating (DECnet: assign exists), never on a new
+	; installation: a careless click must not put a second node with the same
+	; address on the network.
 	(set #addr "")
 	(set #name "")
+	(if #update
+		(
+		(set #addr (getenv "DECnet/Address"))
+		(set #name (getenv "DECnet/Name"))
+		)
+	)
 	(set #device (getenv "DECnet/Device"))
 	(if (= #device "") (set #device "DEVS:Networks/a2065.device"))
 	(set #unit (getenv "DECnet/Unit"))
@@ -339,6 +347,8 @@
 	; remember the answers as defaults for the next update
 	(set #var "Device") (set #val #device) (P_SAVEVAR)
 	(set #var "Unit") (set #val #unit) (P_SAVEVAR)
+	(set #var "Address") (set #val #addr) (P_SAVEVAR)
+	(set #var "Name") (set #val #name) (P_SAVEVAR)
 
 	; ---- start at boot
 	(if (askbool

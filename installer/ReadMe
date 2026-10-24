@@ -30,6 +30,14 @@ follows from its DECnet address. TCP/IP then uses this address as well;
 if your DHCP server hands out a fixed IP address by Ethernet address,
 change that entry. Reboot after the installation.
 
+Two programs show their output in a window of their own:
+
+  DECnet-Check  dncheck's test of the card. The installation goes on
+                when you close this window.
+  DECnet-Nodes  only if you let the installer copy node names: the
+                names dnnodes found. The installation does not wait
+                for it; close it whenever you have read it.
+
 AmigaOS 2.04 has no Installer and no LhA. Get them from Aminet first:
 util/misc/Installer-43_3.lha (copy Installer to C:) and util/arc/lha.run
 (run it, copy lha_68k to C:LhA). On 2.04 the text icons open More;

@@ -117,15 +117,16 @@ class Canvas:
 def drive(c, top=8, label="DECnet"):
     """Hard disk in the Workbench style, DEC logo blocks on the front."""
     f0, f1 = top + 7, top + 27              # front face
-    c.poly([(2, f0), (8, top), (44, top), (38, f0)], "light", "line")
-    c.poly([(38, f0), (44, top), (44, f1 - 6), (38, f1)], "dark", "line")
-    c.rect(2, f0, 38, f1, "mid", "line")
-    c.hline(3, 37, f0 + 1, "light")
-    c.dec_blocks(4, f0 + 3, label)
+    d = 5                                   # depth: 45 degrees, so all slants run clean
+    c.poly([(1, f0), (1 + d, f0 - d), (39 + d, f0 - d), (39, f0)], "light", "line")
+    c.poly([(39, f0), (39 + d, f0 - d), (39 + d, f1 - d), (39, f1)], "dark", "line")
+    c.rect(1, f0, 39, f1, "mid", "line")   # wide enough for 6 blocks + 1 px each side
+    c.hline(2, 38, f0 + 1, "light")
+    c.dec_blocks(3, f0 + 3, label)
     c.hline(6, 28, f1 - 5, "dark")         # drive slot
     c.hline(6, 28, f1 - 4, "light")
     c.rect(32, f1 - 5, 34, f1 - 4, "green")
-    c.hline(3, 37, f1 - 1, "dark")
+    c.hline(2, 38, f1 - 1, "dark")
 
 
 def vax(c):
@@ -212,9 +213,9 @@ def vms_dir(c):
 def installer(c):
     """The drive with a green arrow pointing into it."""
     drive(c, top=17)
-    pts = [(17, 1), (25, 1), (25, 9), (31, 9), (21, 19), (11, 9), (17, 9)]
+    pts = [(17, 3), (25, 3), (25, 11), (31, 11), (21, 21), (11, 11), (17, 11)]
     c.poly(pts, "green", "line")
-    c.vline(18, 2, 9, "white")
+    c.vline(18, 4, 11, "white")
 
 
 def drawer(c):

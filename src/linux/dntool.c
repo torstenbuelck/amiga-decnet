@@ -4,11 +4,13 @@
  * Usage: dntool [-a area.node] [-i iface] [-v] [-u user] [-p password] [-n]
  *               dir NODE SPEC
  *               get NODE SPEC [LOCALFILE]
+ *               put NODE LOCALFILE [SPEC]
  *               nodes NODE [permanent]
  *               task NODE NAME
  *   task connects to the named object (on VMS: runs NAME.COM in the login
  *   directory) and prints every message until the other end disconnects
  *   -n  do not offer DAP blocking (needed for FOTOFX)
+ *   put writes LOCALFILE as binary records (default SPEC: its base name)
  *   nodes lists the node database of NODE through NML (object 19)
  *
  * The tool is a DECnet node itself (default 23.203), so dnhost must not
@@ -179,7 +181,7 @@ static void usage(const char *prog)
 {
 	fprintf(stderr, "usage: %s [-a area.node] [-i iface] [-v] [-u user] [-p password] [-n]\n"
 	        "          dir NODE SPEC | get NODE SPEC [LOCALFILE] | nodes NODE [permanent]\n"
-	        "          task NODE NAME\n", prog);
+	        "          put NODE LOCALFILE [SPEC] | task NODE NAME\n", prog);
 	exit(1);
 }
 
@@ -230,7 +232,7 @@ int main(int argc, char **argv)
 	if (argc - optind < 3)
 		usage(argv[0]);
 	spec = argv[optind + 2];
-	if (strcmp(cmd, "dir") && strcmp(cmd, "get"))
+	if (strcmp(cmd, "dir") && strcmp(cmd, "get") && strcmp(cmd, "put"))
 		usage(argv[0]);
 
 	if (dnenv_open(ifname, addr, verbose))
@@ -266,6 +268,47 @@ int main(int argc, char **argv)
 			rc = 0;
 		} else {
 			fprintf(stderr, "%s\n", d->error);
+		}
+	} else if (!strcmp(cmd, "put")) {
+		const char *remote = argc - optind > 3 ? argv[optind + 3] : NULL;
+		unsigned char buf[DAP_MAXREC];
+		char name[256];
+		long bytes = 0, records = 0;
+		size_t n;
+		FILE *f;
+
+		if (!remote) {
+			remote = strrchr(spec, '/');
+			remote = remote ? remote + 1 : spec;
+		}
+		f = fopen(spec, "rb");
+		if (!f) {
+			perror(spec);
+		} else if (dap_open_write(d, remote, 0, name, sizeof name)) {
+			fprintf(stderr, "%s\n", d->error);
+			fclose(f);
+		} else {
+			rc = 0;
+			while ((n = fread(buf, 1, sizeof buf, f)) > 0) {
+				if (dap_write_record(d, buf, (long)n)) {
+					fprintf(stderr, "%s\n", d->error);
+					rc = 1;
+					break;
+				}
+				bytes += n;
+				records++;
+			}
+			fclose(f);
+			if (dap_close_write(d)) {
+				fprintf(stderr, "%s\n", d->error);
+				rc = 1;
+			}
+			if (!rc) {
+				double t = now() - t0;
+				printf("%s -> %s: %ld bytes, %ld records in %.1f s (%.0f bytes/s)\n",
+				       spec, name[0] ? name : remote, bytes, records, t,
+				       t > 0 ? bytes / t : 0);
+			}
 		}
 	} else {
 		const char *local = argc - optind > 3 ? argv[optind + 3] : NULL;
