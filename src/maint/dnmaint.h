@@ -56,7 +56,8 @@ struct msession {
 	BOOL            raw;            /* ACTION_SCREEN_MODE: char reads */
 	char            inbuf[CTERMH_MAXLINE + 2];
 	long            inlen, inpos;   /* input not yet given to the Shell */
-	BOOL            shell_gone;     /* the Shell has ended */
+	int             handles;        /* file handles open on conport */
+	BOOL            shell_gone;     /* the Shell has ended (handles 0) */
 };
 
 /* dnmaint.c */

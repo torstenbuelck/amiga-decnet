@@ -34,7 +34,20 @@ int con_start(struct msession *s)
    SCREEN_MODE, WAIT_CHAR, END, ...) */
 void con_packet(struct msession *s, struct DosPacket *dp)
 {
-	/* TODO */
+	switch (dp->dp_Type) {
+	case ACTION_END:
+		/* one handle on us closed; the Shell is gone when the last
+		   one is (its own two, and any "*" opened from it) */
+		ReplyPkt(dp, DOSTRUE, 0);
+		if (s->handles > 0 && --s->handles == 0)
+			s->shell_gone = TRUE;
+		break;
+	default:
+		/* TODO: FINDINPUT/FINDOUTPUT/FINDUPDATE (s->handles++),
+		   READ, WRITE, SCREEN_MODE, WAIT_CHAR, ... */
+		ReplyPkt(dp, DOSFALSE, ERROR_ACTION_NOT_KNOWN);
+		break;
+	}
 }
 
 /* input from the terminal for the Shell */
@@ -69,7 +82,26 @@ static BPTR con_fh(struct msession *s)
 	fh->fh_Type = s->conport;               /* packets go to us */
 	fh->fh_Port = (struct MsgPort *)DOSTRUE; /* interactive */
 	fh->fh_Args = (LONG)s;                  /* dp_Arg1 of READ/WRITE/END */
+	s->handles++;
 	return MKBADDR(fh);
+}
+
+/* S:Shell-Startup (prompt, aliases) as the first input line: works on
+   every OS version, while System() runs a startup stream before the
+   interactive input only from V47 on (SYS_CmdStream). The Shell does
+   not echo, so the line is not seen; con_input must append to inbuf */
+static void shell_startup(struct msession *s)
+{
+	static const char cmd[] = "Execute S:Shell-Startup\n";
+	BPTR lock;
+
+	lock = Lock((STRPTR)"S:Shell-Startup", ACCESS_READ);
+	if (!lock)
+		return;
+	UnLock(lock);
+	memcpy(s->inbuf, cmd, sizeof cmd - 1);
+	s->inlen = sizeof cmd - 1;
+	s->inpos = 0;
 }
 
 /* start the Shell with our handler as console */
@@ -77,6 +109,9 @@ int shell_start(struct msession *s)
 {
 	BPTR in, out;
 
+	s->handles = 0;
+	s->shell_gone = FALSE;
+	shell_startup(s);
 	in = con_fh(s);
 	out = con_fh(s);
 	if (!in || !out)
@@ -100,5 +135,7 @@ fail:
 		FreeDosObject(DOS_FILEHANDLE, BADDR(in));
 	if (out)
 		FreeDosObject(DOS_FILEHANDLE, BADDR(out));
+	s->handles = 0;
+	s->inlen = s->inpos = 0;
 	return -1;
 }
