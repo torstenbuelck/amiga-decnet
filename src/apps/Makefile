@@ -15,5 +15,9 @@ dncopy: dncopy.c $(COMMON) $(HDRS)
 dnnodes: dnnodes.c ../nml/nml.c ../nml/nml.h ../common/nodecfg.c ../common/nodecfg.h ../../include/libraries/decnet.h
 	$(CC) $(CFLAGS) -o $@ dnnodes.c ../nml/nml.c ../common/nodecfg.c
 
+# test tool for incoming links, not distributed
+dnaccept: dnaccept.c ../../include/libraries/decnet.h
+	$(CC) $(CFLAGS) -o $@ dnaccept.c
+
 clean:
-	rm -f dndir dncopy dnnodes
+	rm -f dndir dncopy dnnodes dnaccept

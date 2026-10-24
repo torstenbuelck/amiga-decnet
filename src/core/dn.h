@@ -65,7 +65,8 @@ struct dn_link;
 struct dn_object {
 	dn_u8 number;           /* 0 = match by name */
 	const char *name;
-	/* Return 0 and call dn_accept()/dn_reject() (now or later). */
+	/* Call dn_accept()/dn_reject() now or later; while the answer is
+	   outstanding the remote gets a connect ack. */
 	void (*connect)(struct dn_link *l, const struct dn_conninfo *ci);
 	/* One complete NSP message. */
 	void (*data)(struct dn_link *l, const dn_u8 *buf, unsigned len);
@@ -96,6 +97,9 @@ void dn_input(const dn_u8 *srcmac, const dn_u8 *dstmac, const dn_u8 *payload,
 void dn_tick(unsigned ms);
 void dn_shutdown(void);
 int  dn_register_object(struct dn_object *obj);
+void dn_unregister_object(struct dn_object *obj);
+/* by number, or by name (any case) if number is 0 */
+struct dn_object *dn_find_object(dn_u8 number, const char *name);
 
 /* links */
 struct dn_link *dn_connect(const struct dn_connreq *req, struct dn_object *handler);

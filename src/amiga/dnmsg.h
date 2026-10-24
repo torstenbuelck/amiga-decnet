@@ -21,7 +21,13 @@ enum {
 	DNC_READ,           /* dm_Buf/dm_Len/dm_Timeout -> dm_Result */
 	DNC_WRITE,          /* dm_Buf/dm_Len -> dm_Result 0 / -1 */
 	DNC_CLOSE,          /* dm_Link */
-	DNC_REASON          /* dm_Link -> dm_Reason */
+	DNC_REASON,         /* dm_Link -> dm_Reason */
+	/* incoming links (decnet.library 1.2) */
+	DNC_LISTEN,         /* dm_Len objnum, dm_Buf name -> dm_Id listener */
+	DNC_ACCEPT,         /* dm_Link listener, dm_Buf DnConnInfo, dm_Timeout
+	                       -> dm_Id link (still to be answered) */
+	DNC_ANSWER,         /* dm_Link, dm_Reason (0 accept), dm_Buf/dm_Len data */
+	DNC_UNLISTEN        /* dm_Link listener */
 };
 
 struct DnMsg {
@@ -34,6 +40,7 @@ struct DnMsg {
 	struct DnConnectReq *dm_Req;
 	LONG   dm_Result;
 	LONG   dm_Reason;
+	ULONG  dm_Id;           /* new link / listener id (DNC_LISTEN, DNC_ACCEPT) */
 };
 
 /* What the library hands out as struct DnLink. */
@@ -42,6 +49,13 @@ struct DnLink {
 	ULONG  dl_Id;
 	LONG   dl_Reason;
 	struct DnMsg dl_Msg;
+};
+
+/* What the library hands out as struct DnListener. */
+struct DnListener {
+	struct MsgPort *dn_Port;
+	ULONG  dn_Id;
+	struct DnMsg dn_Msg;
 };
 
 #endif

@@ -57,6 +57,5 @@ void dn_route_tick(void);
 void dn_nsp_input(dn_u16 src, const dn_u8 *msg, unsigned len, int returned);
 void dn_nsp_tick(void);
 void dn_nsp_shutdown(void);
-struct dn_object *dn_find_object(dn_u8 number, const char *name);
 
 #endif

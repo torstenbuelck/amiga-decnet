@@ -144,6 +144,17 @@ int dn_register_object(struct dn_object *obj)
 	return -1;
 }
 
+/* no new connects for obj; links it already has keep using it, so obj
+   must stay valid */
+void dn_unregister_object(struct dn_object *obj)
+{
+	int i;
+
+	for (i = 0; i < DN_MAXOBJECTS; i++)
+		if (dn_g.objects[i] == obj)
+			dn_g.objects[i] = 0;
+}
+
 static int name_eq(const char *a, const char *b)
 {
 	for (; *a && *b; a++, b++) {
@@ -324,6 +335,14 @@ static void send_di(struct dn_link *l)
 	l->ctl_time = dn_g.now;
 }
 
+/* the object will answer later: stop the remote retransmitting its CI */
+static void send_connack(const struct dn_link *l)
+{
+	msgbuf[0] = MSG_CONNACK;
+	PUT16(msgbuf + 1, l->remaddr);
+	dn_route_send(l->node, msgbuf, 3, 0);
+}
+
 static void send_dc(dn_u16 node, dn_u16 dstaddr, dn_u16 srcaddr, dn_u16 reason)
 {
 	msgbuf[0] = MSG_DC;
@@ -478,6 +497,8 @@ static void handle_ci(dn_u16 node, const dn_u8 *m, unsigned len)
 		if (l->state != L_FREE && l->node == node && l->remaddr == remaddr) {
 			if (l->state == L_CC)
 				send_cc(l);
+			else if (l->state == L_CR)
+				send_connack(l);
 			return;
 		}
 	}
@@ -528,6 +549,8 @@ static void handle_ci(dn_u16 node, const dn_u8 *m, unsigned len)
 	}
 	l->obj = obj;
 	obj->connect(l, &ci);
+	if (l->state == L_CR)
+		send_connack(l);
 }
 
 static void deliver(struct dn_link *l, const dn_u8 *p, unsigned len, dn_u8 flags)

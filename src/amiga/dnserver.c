@@ -7,6 +7,11 @@
  * WRITE_WINDOW segments are unacknowledged; everything else is replied
  * at once.
  *
+ * Incoming links: DNC_LISTEN registers an object for the caller. A
+ * connect to it waits (at most MAXQUEUED per object, ANSWER_TIME ms) until
+ * the program takes it with DNC_ACCEPT and answers it with DNC_ANSWER;
+ * meanwhile the core tells the remote with a connect ack.
+ *
  * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
@@ -26,6 +31,9 @@
 /* A write waits while more segments than this are unacknowledged, so a
    writer cannot pile up a whole file in dnetd's memory. */
 #define WRITE_WINDOW 16
+#define MAXLISTEN 8
+#define MAXQUEUED 4
+#define ANSWER_TIME 30000UL
 
 struct qmsg {
 	struct qmsg *next;
@@ -46,10 +54,24 @@ struct srv {
 	ULONG read_deadline;
 	struct DnMsg *pwrite;       /* DNC_WRITE waiting for acknowledgements */
 	ULONG write_deadline;
+	int incoming;               /* 1 waits for DNC_ACCEPT, 2 for DNC_ANSWER */
+	int lsn;                    /* its listener */
+	ULONG answer_deadline;
+	struct dn_conninfo ci;
+};
+
+struct lsn {
+	int used;
+	ULONG id;
+	struct dn_object obj;       /* stays valid: old links still use it */
+	char name[18];
+	struct DnMsg *paccept;      /* pending DNC_ACCEPT */
+	ULONG accept_deadline;
 };
 
 static struct MsgPort *pubport;
 static struct srv srvs[MAXSRV];
+static struct lsn lsns[MAXLISTEN];
 static ULONG generation;
 static ULONG now;               /* ms, advanced by srv_tick */
 
@@ -67,6 +89,15 @@ static struct srv *find_srv(ULONG id)
 	if ((id & 0xff) >= MAXSRV || !s->used || s->id != id)
 		return NULL;
 	return s;
+}
+
+static struct lsn *find_lsn(ULONG id)
+{
+	struct lsn *n = &lsns[id & 0xff];
+
+	if ((id & 0xff) >= MAXLISTEN || !n->used || n->id != id)
+		return NULL;
+	return n;
 }
 
 static void free_queue(struct srv *s)
@@ -153,6 +184,12 @@ static void cb_disconnect(struct dn_link *l, dn_u16 reason)
 	s->state = 2;
 	s->reason = reason;
 	s->link = NULL;
+	if (s->incoming == 1) {
+		/* gave up before anybody took it */
+		free_queue(s);
+		s->used = 0;
+		return;
+	}
 	if (s->pconnect) {
 		/* connect failed: nobody will ever see this id */
 		reply(s->pconnect, -1, reason);
@@ -172,27 +209,113 @@ static struct dn_object handler = {
 	0, NULL, NULL, cb_data, cb_disconnect, NULL, cb_connected
 };
 
+static void copy_str(UBYTE *d, const char *s, int max)
+{
+	int i;
+
+	for (i = 0; i < max - 1 && s[i]; i++)
+		d[i] = s[i];
+	d[i] = 0;
+}
+
+/* give a waiting connect to the program waiting in DNC_ACCEPT */
+static void hand_out(struct lsn *n, struct srv *s)
+{
+	struct DnMsg *m = n->paccept;
+	struct DnConnInfo *d = m->dm_Buf;
+
+	n->paccept = NULL;
+	memset(d, 0, sizeof *d);
+	d->dci_Node = s->ci.node;
+	d->dci_ObjNum = s->ci.dstobj;
+	d->dci_SrcObj = s->ci.srcobj;
+	copy_str(d->dci_ObjName, s->ci.dstname, sizeof d->dci_ObjName);
+	copy_str(d->dci_SrcName, s->ci.srcname, sizeof d->dci_SrcName);
+	copy_str(d->dci_User, s->ci.user, sizeof d->dci_User);
+	copy_str(d->dci_Password, s->ci.password, sizeof d->dci_Password);
+	copy_str(d->dci_Account, s->ci.account, sizeof d->dci_Account);
+	CopyMem(s->ci.data, d->dci_Data, s->ci.datalen);
+	d->dci_DataLen = s->ci.datalen;
+	memset(&s->ci, 0, sizeof s->ci);    /* no passwords lying around */
+	s->incoming = 2;
+	m->dm_Id = s->id;
+	reply(m, 0, 0);
+}
+
+static struct srv *new_srv(void)
+{
+	int i;
+
+	for (i = 0; i < MAXSRV; i++)
+		if (!srvs[i].used) {
+			struct srv *s = &srvs[i];
+			memset(s, 0, sizeof *s);
+			s->used = 1;
+			s->id = (ULONG)i | (++generation << 8);
+			return s;
+		}
+	return NULL;
+}
+
+static int name_match(const char *a, const char *b)
+{
+	for (; *a && *b; a++, b++) {
+		char x = *a, y = *b;
+		if (x >= 'a' && x <= 'z') x -= 32;
+		if (y >= 'a' && y <= 'z') y -= 32;
+		if (x != y)
+			return 0;
+	}
+	return *a == *b;
+}
+
+static void cb_incoming(struct dn_link *l, const struct dn_conninfo *ci)
+{
+	struct lsn *n = NULL;
+	struct srv *s;
+	int i, queued = 0;
+
+	for (i = 0; i < MAXLISTEN && !n; i++) {
+		struct lsn *c = &lsns[i];
+		if (!c->used)
+			continue;
+		if (ci->dstobj ? c->obj.number == ci->dstobj :
+		    !c->obj.number && name_match(c->name, ci->dstname))
+			n = c;
+	}
+	if (!n) {
+		dn_reject(l, DNREASON_NOOBJECT, NULL, 0);
+		return;
+	}
+	for (i = 0; i < MAXSRV; i++)
+		if (srvs[i].used && srvs[i].incoming == 1 && srvs[i].lsn == n - lsns)
+			queued++;
+	if (queued >= MAXQUEUED || !(s = new_srv())) {
+		dn_reject(l, DNREASON_RESOURCES, NULL, 0);
+		return;
+	}
+	s->link = l;
+	s->incoming = 1;
+	s->lsn = n - lsns;
+	s->ci = *ci;
+	s->answer_deadline = now + ANSWER_TIME;
+	dn_set_user(l, s);
+	if (n->paccept)
+		hand_out(n, s);
+}
+
 /* ---- requests ----------------------------------------------------------------- */
 
 static void do_connect(struct DnMsg *m)
 {
 	struct DnConnectReq *r = m->dm_Req;
 	struct dn_connreq req;
-	struct srv *s = NULL;
-	int i;
+	struct srv *s = new_srv();
 
-	for (i = 0; i < MAXSRV; i++)
-		if (!srvs[i].used) {
-			s = &srvs[i];
-			break;
-		}
 	if (!s) {
 		reply(m, -1, DNREASON_RESOURCES);
 		return;
 	}
-	memset(s, 0, sizeof *s);
-	s->used = 1;
-	s->id = (ULONG)i | (++generation << 8);
 
 	memset(&req, 0, sizeof req);
 	req.node = r->dcr_Node;
@@ -221,7 +344,8 @@ static void do_close(struct srv *s)
 {
 	if (s->link) {
 		dn_set_user(s->link, NULL);
-		dn_disconnect(s->link, DNREASON_NORMAL, NULL, 0);
+		/* not answered yet: this rejects it */
+		dn_disconnect(s->link, s->incoming ? DNREASON_RESOURCES : DNREASON_NORMAL, NULL, 0);
 	}
 	if (s->pread)
 		reply(s->pread, DNR_CLOSED, DNREASON_NOLINK);
@@ -231,12 +355,136 @@ static void do_close(struct srv *s)
 	s->used = 0;
 }
 
+static void do_listen(struct DnMsg *m)
+{
+	const char *name = m->dm_Buf;
+	LONG num = m->dm_Len;
+	struct lsn *n = NULL;
+	int i;
+
+	if (num < 0 || num > 255 || (!num && (!name || !*name))) {
+		reply(m, -1, DNREASON_NOOBJECT);
+		return;
+	}
+	if (!num && strlen(name) > 16) {
+		reply(m, -1, DNREASON_NOOBJECT);
+		return;
+	}
+	/* taken by a built-in object or another program */
+	if (dn_find_object((dn_u8)num, num ? NULL : name)) {
+		reply(m, -1, DNREASON_BUSY);
+		return;
+	}
+	for (i = 0; i < MAXLISTEN; i++)
+		if (!lsns[i].used) {
+			n = &lsns[i];
+			break;
+		}
+	if (!n) {
+		reply(m, -1, DNREASON_RESOURCES);
+		return;
+	}
+	memset(n, 0, sizeof *n);
+	n->used = 1;
+	n->id = (ULONG)i | (++generation << 8);
+	if (!num)
+		strcpy(n->name, name);
+	n->obj.number = (dn_u8)num;
+	n->obj.name = num ? NULL : n->name;
+	n->obj.connect = cb_incoming;
+	n->obj.data = cb_data;
+	n->obj.disconnect = cb_disconnect;
+	n->obj.connected = cb_connected;
+	if (dn_register_object(&n->obj)) {
+		n->used = 0;
+		reply(m, -1, DNREASON_RESOURCES);
+		return;
+	}
+	m->dm_Id = n->id;
+	reply(m, 0, 0);
+}
+
+static void do_accept(struct lsn *n, struct DnMsg *m)
+{
+	int i;
+
+	if (n->paccept || !m->dm_Buf) {
+		reply(m, -1, DNREASON_RESOURCES);
+		return;
+	}
+	n->paccept = m;
+	n->accept_deadline = now + (m->dm_Timeout > 0 ? (ULONG)m->dm_Timeout : 0x7fffffffUL);
+	for (i = 0; i < MAXSRV; i++)
+		if (srvs[i].used && srvs[i].incoming == 1 && srvs[i].lsn == n - lsns) {
+			hand_out(n, &srvs[i]);
+			break;
+		}
+}
+
+static void do_unlisten(struct lsn *n)
+{
+	int i;
+
+	dn_unregister_object(&n->obj);
+	for (i = 0; i < MAXSRV; i++) {
+		struct srv *s = &srvs[i];
+		if (s->used && s->incoming == 1 && s->lsn == n - lsns) {
+			dn_set_user(s->link, NULL);
+			dn_reject(s->link, DNREASON_SHUTDOWN, NULL, 0);
+			s->used = 0;
+		}
+	}
+	if (n->paccept)
+		reply(n->paccept, -1, DNREASON_SHUTDOWN);
+	n->paccept = NULL;
+	n->used = 0;
+}
+
+static void do_answer(struct srv *s, struct DnMsg *m)
+{
+	unsigned len = m->dm_Buf && m->dm_Len > 0 ? (unsigned)m->dm_Len : 0;
+
+	if (s->incoming != 2 || !s->link || s->state != 0 || len > 16) {
+		reply(m, -1, s->state == 2 ? s->reason : DNREASON_NOLINK);
+		return;
+	}
+	s->incoming = 0;
+	if (m->dm_Reason == 0) {
+		dn_accept(s->link, m->dm_Buf, len);
+		s->state = 1;
+	} else {
+		dn_set_user(s->link, NULL);
+		dn_reject(s->link, (dn_u16)m->dm_Reason, m->dm_Buf, len);
+		s->link = NULL;
+		s->state = 2;
+		s->reason = m->dm_Reason;
+	}
+	reply(m, 0, 0);
+}
+
 static void handle(struct DnMsg *m)
 {
 	struct srv *s;
+	struct lsn *n;
 
-	if (m->dm_Cmd == DNC_CONNECT) {
+	switch (m->dm_Cmd) {
+	case DNC_CONNECT:
 		do_connect(m);
+		return;
+	case DNC_LISTEN:
+		do_listen(m);
+		return;
+	case DNC_ACCEPT:
+	case DNC_UNLISTEN:
+		n = find_lsn(m->dm_Link);
+		if (!n)
+			reply(m, -1, DNREASON_NOLINK);
+		else if (m->dm_Cmd == DNC_ACCEPT)
+			do_accept(n, m);
+		else {
+			do_unlisten(n);
+			reply(m, 0, 0);
+		}
 		return;
 	}
 	s = find_srv(m->dm_Link);
@@ -271,6 +519,9 @@ static void handle(struct DnMsg *m)
 		break;
 	case DNC_REASON:
 		reply(m, 0, s->reason);
+		break;
+	case DNC_ANSWER:
+		do_answer(s, m);
 		break;
 	default:
 		reply(m, -1, DNREASON_RESOURCES);
@@ -325,10 +576,31 @@ void srv_tick(unsigned ms)
 	int i;
 
 	now += ms;
+	for (i = 0; i < MAXLISTEN; i++) {
+		struct lsn *n = &lsns[i];
+		if (n->used && n->paccept && (LONG)(now - n->accept_deadline) >= 0) {
+			struct DnMsg *m = n->paccept;
+			n->paccept = NULL;
+			reply(m, -1, DNREASON_TIMEOUT);
+		}
+	}
 	for (i = 0; i < MAXSRV; i++) {
 		struct srv *s = &srvs[i];
 		if (!s->used)
 			continue;
+		if (s->incoming && s->link && (LONG)(now - s->answer_deadline) >= 0) {
+			/* nobody took or answered it in time */
+			dn_set_user(s->link, NULL);
+			dn_reject(s->link, DNREASON_RESOURCES, NULL, 0);
+			s->link = NULL;
+			if (s->incoming == 1) {
+				s->used = 0;
+				continue;
+			}
+			s->incoming = 0;
+			s->state = 2;
+			s->reason = DNREASON_RESOURCES;
+		}
 		if (s->pread && (LONG)(now - s->read_deadline) >= 0) {
 			struct DnMsg *m = s->pread;
 			s->pread = NULL;
@@ -367,6 +639,12 @@ void srv_shutdown(void)
 	Permit();
 	while ((m = (struct DnMsg *)GetMsg(pubport)) != NULL)
 		reply(m, -1, DNREASON_SHUTDOWN);
+	for (i = 0; i < MAXLISTEN; i++) {
+		struct lsn *n = &lsns[i];
+		if (n->used && n->paccept)
+			reply(n->paccept, -1, DNREASON_SHUTDOWN);
+		n->paccept = NULL;
+	}
 	for (i = 0; i < MAXSRV; i++) {
 		struct srv *s = &srvs[i];
 		if (!s->used)

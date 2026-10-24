@@ -20,6 +20,23 @@
 /* Opaque logical link handle. Use it only from the task that created it. */
 struct DnLink;
 
+/* Opaque handle of an object this program serves (DnListen()). */
+struct DnListener;
+
+/* Who is calling, as DnAccept() reports it. */
+struct DnConnInfo {
+	UWORD dci_Node;                 /* remote node address */
+	UBYTE dci_ObjNum;               /* object number called (0 = by name) */
+	UBYTE dci_SrcObj;
+	UBYTE dci_ObjName[18];          /* object name if called by name */
+	UBYTE dci_SrcName[18];          /* remote task / user name */
+	UBYTE dci_User[40];             /* access control, may be empty */
+	UBYTE dci_Password[40];
+	UBYTE dci_Account[40];
+	UBYTE dci_Data[16];             /* optional connect data */
+	UWORD dci_DataLen;
+};
+
 /* Connect request for DnConnect(). Object by number, or by name if
    dcr_ObjNum is 0. String pointers may be NULL. */
 struct DnConnectReq {

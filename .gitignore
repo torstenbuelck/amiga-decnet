@@ -6,6 +6,7 @@
 /src/apps/dndir
 /src/apps/dncopy
 /src/apps/dnnodes
+/src/apps/dnaccept
 /src/handler/dn-handler
 /src/term/dnterm.device
 /src/term/dntermpatch

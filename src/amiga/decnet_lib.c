@@ -21,8 +21,8 @@
 
 #define LIBNAME   "decnet.library"
 #define VERSION   1
-#define REVISION  1
-#define IDSTRING  "decnet.library 1.1 (23.10.2026)\r\n"
+#define REVISION  2
+#define IDSTRING  "decnet.library 1.2 (24.10.2026)\r\n"
 
 #define REG(r, decl) register decl __asm(#r)
 
@@ -170,6 +170,93 @@ LONG LibDnLinkReason(REG(a0, struct DnLink *l), REG(a6, struct Library *base))
 	return l ? l->dl_Reason : DNREASON_NOLINK;
 }
 
+/* ---- incoming links (1.2) ------------------------------------------------------ */
+
+struct DnListener *LibDnListen(REG(d0, LONG objnum), REG(a0, CONST_STRPTR objname),
+                               REG(a6, struct Library *base))
+{
+	struct DnListener *n;
+
+	(void)base;
+	n = AllocVec(sizeof(struct DnListener), MEMF_PUBLIC | MEMF_CLEAR);
+	if (!n)
+		return NULL;
+	n->dn_Port = CreateMsgPort();
+	if (n->dn_Port) {
+		n->dn_Msg.dm_Cmd = DNC_LISTEN;
+		n->dn_Msg.dm_Len = objnum;
+		n->dn_Msg.dm_Buf = (APTR)objname;
+		if (transact(&n->dn_Msg, n->dn_Port) && n->dn_Msg.dm_Result == 0) {
+			n->dn_Id = n->dn_Msg.dm_Id;
+			return n;
+		}
+		DeleteMsgPort(n->dn_Port);
+	}
+	FreeVec(n);
+	return NULL;
+}
+
+struct DnLink *LibDnAccept(REG(a0, struct DnListener *n), REG(a1, struct DnConnInfo *info),
+                           REG(d0, LONG timeout), REG(a6, struct Library *base))
+{
+	struct DnLink *l;
+
+	(void)base;
+	if (!n || !info)
+		return NULL;
+	l = AllocVec(sizeof(struct DnLink), MEMF_PUBLIC | MEMF_CLEAR);
+	if (!l)
+		return NULL;
+	l->dl_Port = CreateMsgPort();
+	if (l->dl_Port) {
+		n->dn_Msg.dm_Cmd = DNC_ACCEPT;
+		n->dn_Msg.dm_Link = n->dn_Id;
+		n->dn_Msg.dm_Buf = info;
+		n->dn_Msg.dm_Timeout = timeout;
+		if (transact(&n->dn_Msg, n->dn_Port) && n->dn_Msg.dm_Result == 0) {
+			l->dl_Id = n->dn_Msg.dm_Id;
+			return l;
+		}
+		DeleteMsgPort(l->dl_Port);
+	}
+	FreeVec(l);
+	return NULL;
+}
+
+LONG LibDnAnswer(REG(a0, struct DnLink *l), REG(d0, LONG reason), REG(a1, CONST_APTR data),
+                 REG(d1, LONG len), REG(a6, struct Library *base))
+{
+	(void)base;
+	if (!l)
+		return -1;
+	l->dl_Msg.dm_Cmd = DNC_ANSWER;
+	l->dl_Msg.dm_Link = l->dl_Id;
+	l->dl_Msg.dm_Reason = reason;
+	l->dl_Msg.dm_Buf = (APTR)data;
+	l->dl_Msg.dm_Len = len;
+	if (!transact(&l->dl_Msg, l->dl_Port)) {
+		l->dl_Reason = DNREASON_NODNETD;
+		return -1;
+	}
+	if (l->dl_Msg.dm_Result < 0)
+		l->dl_Reason = l->dl_Msg.dm_Reason;
+	else if (reason)
+		l->dl_Reason = reason;
+	return l->dl_Msg.dm_Result;
+}
+
+VOID LibDnUnlisten(REG(a0, struct DnListener *n), REG(a6, struct Library *base))
+{
+	(void)base;
+	if (!n)
+		return;
+	n->dn_Msg.dm_Cmd = DNC_UNLISTEN;
+	n->dn_Msg.dm_Link = n->dn_Id;
+	transact(&n->dn_Msg, n->dn_Port);
+	DeleteMsgPort(n->dn_Port);
+	FreeVec(n);
+}
+
 /* "23.208" or a name from ENV:DECnet/nodes ("HOWIE 23.208" per line).
    Returns the address or -1. */
 static LONG parse_addr(const UBYTE *s, const UBYTE **end)
@@ -296,6 +383,10 @@ static const APTR functable[] = {
 	(APTR)LibDnClose,
 	(APTR)LibDnLinkReason,
 	(APTR)LibDnNodeAddr,
+	(APTR)LibDnListen,
+	(APTR)LibDnAccept,
+	(APTR)LibDnAnswer,
+	(APTR)LibDnUnlisten,
 	(APTR)-1
 };
 

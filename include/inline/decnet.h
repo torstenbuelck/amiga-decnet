@@ -44,4 +44,20 @@ typedef ULONG _sfdc_vararg;
       LP1(0x3c, LONG, DnNodeAddr , CONST_STRPTR, ___name, a0,\
       , DECNET_BASE_NAME)
 
+#define DnListen(___objnum, ___objname) \
+      LP2(0x42, struct DnListener *, DnListen , LONG, ___objnum, d0, CONST_STRPTR, ___objname, a0,\
+      , DECNET_BASE_NAME)
+
+#define DnAccept(___listener, ___info, ___timeout) \
+      LP3(0x48, struct DnLink *, DnAccept , struct DnListener *, ___listener, a0, struct DnConnInfo *, ___info, a1, LONG, ___timeout, d0,\
+      , DECNET_BASE_NAME)
+
+#define DnAnswer(___link, ___reason, ___data, ___length) \
+      LP4(0x4e, LONG, DnAnswer , struct DnLink *, ___link, a0, LONG, ___reason, d0, CONST_APTR, ___data, a1, LONG, ___length, d1,\
+      , DECNET_BASE_NAME)
+
+#define DnUnlisten(___listener) \
+      LP1NR(0x54, DnUnlisten , struct DnListener *, ___listener, a0,\
+      , DECNET_BASE_NAME)
+
 #endif /* !_INLINE_DECNET_H */

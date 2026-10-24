@@ -4,7 +4,7 @@
 #define CLIB_DECNET_PROTOS_H
 
 /*
-**   $VER: decnet_protos.h 1.0 $Id: decnet_lib.sfd 1.0 (21.10.2026) $
+**   $VER: decnet_protos.h 1.2 $Id: decnet_lib.sfd 1.2 (24.10.2026) $
 **
 **   C prototypes. For use with 32 bit integers only.
 **
@@ -28,6 +28,10 @@ LONG DnWrite(struct DnLink * link, CONST_APTR buffer, LONG length);
 VOID DnClose(struct DnLink * link);
 LONG DnLinkReason(struct DnLink * link);
 LONG DnNodeAddr(CONST_STRPTR name);
+struct DnListener * DnListen(LONG objnum, CONST_STRPTR objname);
+struct DnLink * DnAccept(struct DnListener * listener, struct DnConnInfo * info, LONG timeout);
+LONG DnAnswer(struct DnLink * link, LONG reason, CONST_APTR data, LONG length);
+VOID DnUnlisten(struct DnListener * listener);
 
 #ifdef __cplusplus
 }

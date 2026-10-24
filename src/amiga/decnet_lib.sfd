@@ -1,4 +1,4 @@
-==id $Id: decnet_lib.sfd 1.0 (21.10.2026) $
+==id $Id: decnet_lib.sfd 1.2 (24.10.2026) $
 * decnet.library - DECnet Phase IV logical links for AmigaOS
 * Copyright (C) 2026  Torsten Bülck (tuti), GPL-2.0-or-later
 ==base _DECnetBase
@@ -14,4 +14,8 @@ LONG DnWrite(struct DnLink * link, CONST_APTR buffer, LONG length) (a0,a1,d0)
 VOID DnClose(struct DnLink * link) (a0)
 LONG DnLinkReason(struct DnLink * link) (a0)
 LONG DnNodeAddr(CONST_STRPTR name) (a0)
+struct DnListener * DnListen(LONG objnum, CONST_STRPTR objname) (d0,a0)
+struct DnLink * DnAccept(struct DnListener * listener, struct DnConnInfo * info, LONG timeout) (a0,a1,d0)
+LONG DnAnswer(struct DnLink * link, LONG reason, CONST_APTR data, LONG length) (a0,d0,a1,d1)
+VOID DnUnlisten(struct DnListener * listener) (a0)
 ==end
