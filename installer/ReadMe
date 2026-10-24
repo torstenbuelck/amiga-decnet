@@ -116,6 +116,7 @@ Using it
   Copy RAM:test.txt DN:VAX1/        copy a file to VAX1
   dndir VAX1 [GUEST]*.*             directory listing in VMS syntax
   dncopy VAX1 TEST.TXT RAM:test.txt
+  dncopy VAX1 [GUEST]TEST.TXT RAM:  into a drawer: keeps the name
   dncopy VAX1 BIG.DAT RAM:big.dat PROGRESS=WINDOW
                                     with a progress window (TEXT: a
                                     progress line in the Shell)

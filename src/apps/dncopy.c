@@ -2,6 +2,8 @@
  * dncopy - copy a file from a DECnet node (DAP / FAL).
  *
  * Usage: dncopy NODE/A,SPEC/A,TO/A,USER/K,PASSWORD/K,NOBLOCK/S,VERBOSE/S,PROGRESS/K
+ *   TO may be a directory or volume: the file then keeps its name from
+ *   SPEC there (without VMS directory and version).
  *   Text records get a linefeed; everything else is copied byte for byte.
  *   NOBLOCK for servers like FOTOFX. VERBOSE logs the DAP messages.
  *   Without USER, USER/PASSWORD/NOBLOCK come from ENV:DECnet/nodes.
@@ -31,7 +33,7 @@
 
 #include "dapamiga.h"
 
-static const char version[] = "$VER: dncopy 0.2 (23.10.2026)";
+static const char version[] = "$VER: dncopy 0.3 (24.10.2026)";
 unsigned long __stack = 16384;
 
 struct IntuitionBase *IntuitionBase;
@@ -539,6 +541,42 @@ static int parse_mode(const char *s)
 	return -1;
 }
 
+/* TO as given, or, if it is a directory, TO plus the file name of spec
+   ("[DIR]NAME.EXT;3", "MUSTER/NAME.EXT" -> "NAME.EXT"). */
+static void target_name(const char *to, const char *spec, char *out, LONG size)
+{
+	struct FileInfoBlock *fib;
+	const char *p = spec, *q;
+	char name[108];
+	BPTR lock;
+	BOOL dir = FALSE;
+
+	strncpy(out, to, size - 1);
+	out[size - 1] = 0;
+	lock = Lock((STRPTR)to, SHARED_LOCK);
+	if (!lock)
+		return;
+	fib = AllocDosObject(DOS_FIB, NULL);
+	if (fib && Examine(lock, fib))
+		dir = fib->fib_DirEntryType > 0;
+	if (fib)
+		FreeDosObject(DOS_FIB, fib);
+	UnLock(lock);
+	if (!dir)
+		return;
+	for (q = spec; *q; q++)
+		if (*q == ']' || *q == '>' || *q == ':' || *q == '/')
+			p = q + 1;
+	for (q = p; *q && *q != ';'; q++)
+		;
+	if (q - p >= (LONG)sizeof name)
+		q = p + sizeof name - 1;
+	memcpy(name, p, q - p);
+	name[q - p] = 0;
+	if (name[0])
+		AddPart((STRPTR)out, (STRPTR)name, size);
+}
+
 int main(void)
 {
 	static const char template[] =
@@ -551,7 +589,7 @@ int main(void)
 	struct DateStamp t0;
 	const unsigned char *p;
 	long n;
-	char msg[200];
+	char msg[200], to[256];
 	int mode, r, rc = RETURN_FAIL;
 
 	rda = ReadArgs((STRPTR)template, args, NULL);
@@ -565,6 +603,7 @@ int main(void)
 		FreeArgs(rda);
 		return RETURN_FAIL;
 	}
+	target_name((const char *)args[2], (const char *)args[1], to, sizeof to);
 	memset(&o, 0, sizeof o);
 	o.buf = AllocVec(OUTBUF, MEMF_ANY);
 	if (!o.buf)
@@ -580,11 +619,11 @@ int main(void)
 	ui_node((const char *)args[0]);
 	link_read = d->read;
 	d->read = slice_read;
-	o.fh = Open((STRPTR)args[2], MODE_NEWFILE);
+	o.fh = Open((STRPTR)to, MODE_NEWFILE);
 	if (!o.fh) {
 		LONG err = IoErr();
-		PrintFault(err, (STRPTR)args[2]);
-		Fault(err, (STRPTR)args[2], (STRPTR)msg, sizeof msg);
+		PrintFault(err, (STRPTR)to);
+		Fault(err, (STRPTR)to, (STRPTR)msg, sizeof msg);
 		ui_finish(FALSE, msg);
 	} else {
 		ui_step("Opening the file ...");
@@ -612,7 +651,7 @@ int main(void)
 		if (r == 0 && !o.failed) {
 			LONG ticks = ticks_since(&t0);
 			sprintf(msg, "%s -> %s: %ld bytes, %ld records in %ld.%ld s",
-			        (char *)args[1], (char *)args[2], (long)o.bytes, (long)o.records,
+			        (char *)args[1], to, (long)o.bytes, (long)o.records,
 			        (long)(ticks / TICKS_PER_SECOND),
 			        (long)((ticks % TICKS_PER_SECOND) * 10 / TICKS_PER_SECOND));
 			char done[40];
@@ -628,7 +667,7 @@ int main(void)
 			const char *e = o.failed ? "write error" : d->error;
 			ui_finish(FALSE, e);
 			Printf("%s\n", (STRPTR)e);
-			DeleteFile((STRPTR)args[2]);
+			DeleteFile((STRPTR)to);
 		}
 	}
 	dapa_close(d);
