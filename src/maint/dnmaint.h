@@ -7,10 +7,9 @@
  * and password the service refuses every connect.
  *
  * Configuration (read from ENV: only, see the installer):
- *   ENV:DECnet/maint-node      address of the only node allowed (area.node)
+ *   ENV:DECnet/maint-node      the only node allowed (area.node, or a
+ *                              name from ENV:DECnet/nodes)
  *   ENV:DECnet/maint-password  password asked after connect
- *
- * Framework only: the bodies are still empty.
  *
  * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later

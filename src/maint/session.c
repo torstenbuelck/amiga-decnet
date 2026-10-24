@@ -128,6 +128,8 @@ int session_run(struct msession *s)
 		if (got & SIGBREAKF_CTRL_C) {
 			if (s->state == MS_SHELL || s->state == MS_LOGIN)
 				say(s, "\n*** dnmaint stopped on the Amiga\n");
+			/* Wait() took the signal; main must see it as well */
+			SetSignal(SIGBREAKF_CTRL_C, SIGBREAKF_CTRL_C);
 			s->state = MS_DONE;
 			break;
 		}
