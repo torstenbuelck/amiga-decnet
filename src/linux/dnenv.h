@@ -22,6 +22,9 @@ int  dn_aton(const char *s, dn_u16 *out);   /* "23.208" -> address */
 struct dns;
 struct dns *dns_connect(const struct dn_connreq *req, int timeout_ms, int *reason);
 /* one complete NSP message: >0 length, 0 timeout, -1 link gone */
+/* wait for a connect to object objnum (timeout <0: forever) and accept it;
+   further connects are rejected while nobody waits */
+struct dns *dns_accept(dn_u8 objnum, int timeout_ms, struct dn_conninfo *ci);
 long dns_read(struct dns *s, unsigned char *buf, long max, int timeout_ms);
 int  dns_write(struct dns *s, const unsigned char *buf, long n);
 void dns_close(struct dns *s);

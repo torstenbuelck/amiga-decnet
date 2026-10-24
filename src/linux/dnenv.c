@@ -283,6 +283,52 @@ struct dns *dns_connect(const struct dn_connreq *req, int timeout_ms, int *reaso
 	return s;
 }
 
+/* incoming links: one object, one waiting caller */
+static struct dns *accepted;
+static int listening;
+static struct dn_conninfo accepted_ci;
+
+static void cb_connect(struct dn_link *l, const struct dn_conninfo *ci)
+{
+	struct dns *s;
+
+	if (!listening || accepted || !(s = calloc(1, sizeof *s))) {
+		dn_reject(l, DN_R_RESOURCES, NULL, 0);
+		return;
+	}
+	s->link = l;
+	s->state = 1;
+	dn_set_user(l, s);
+	accepted_ci = *ci;
+	accepted = s;
+	dn_accept(l, NULL, 0);
+}
+
+static struct dn_object listener = {
+	0, NULL, cb_connect, cb_data, cb_disconnect, NULL, NULL
+};
+
+struct dns *dns_accept(dn_u8 objnum, int timeout_ms, struct dn_conninfo *ci)
+{
+	unsigned long until = now_ms() + timeout_ms;
+	struct dns *s;
+
+	if (!listener.number) {
+		listener.number = objnum;
+		if (dn_register_object(&listener))
+			return NULL;
+	}
+	listening = 1;
+	while (!accepted && (timeout_ms < 0 || now_ms() < until) && !stop)
+		dnenv_pump(100);
+	listening = 0;
+	s = accepted;
+	accepted = NULL;
+	if (s && ci)
+		*ci = accepted_ci;
+	return s;
+}
+
 long dns_read(struct dns *s, unsigned char *buf, long max, int timeout_ms)
 {
 	unsigned long until = now_ms() + timeout_ms;

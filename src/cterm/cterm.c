@@ -460,7 +460,7 @@ static void do_initiate(struct cterm *c)
 static void do_start_read(struct cterm *c, const unsigned char *b, long n)
 {
 	unsigned long flags;
-	unsigned maxlen, eodata, timeout, eoprompt, termlen, p;
+	unsigned maxlen, eodata, timeout, eoprompt, startdisp, termlen, p;
 	const char *data;
 	long datalen;
 	unsigned i;
@@ -472,7 +472,8 @@ static void do_start_read(struct cterm *c, const unsigned char *b, long n)
 	eodata = get16(b + 6);
 	timeout = get16(b + 8);
 	eoprompt = get16(b + 10);
-	/* b+12 start of display, b+14 low water: not used */
+	startdisp = get16(b + 12);      /* data before it is already shown */
+	/* b+14 low water: not used */
 	termlen = b[16];
 	p = 17;
 	if (p + termlen > (unsigned long)n)
@@ -482,6 +483,8 @@ static void do_start_read(struct cterm *c, const unsigned char *b, long n)
 	(void)eodata;
 	if (eoprompt > datalen)
 		eoprompt = datalen;
+	if (startdisp > datalen)
+		startdisp = datalen;
 	logf_(c, "start-read flags %06lx max %u prompt %u", flags, maxlen, eoprompt);
 
 	if (flags & 0x4)
@@ -510,26 +513,31 @@ static void do_start_read(struct cterm *c, const unsigned char *b, long n)
 	c->idle_ms = 0;
 	c->echo_terminator = (flags >> 12) & 1;
 
-	/* prompt, then data already in the line (e.g. a recalled command) */
-	if (c->skip_lf && eoprompt && data[0] == '\n') {
-		term_out(c, data + 1, eoprompt - 1);
-	} else if (eoprompt)
-		term_out(c, data, eoprompt);
-	c->skip_lf = 0;
-	c->line_start = 0;
-	for (i = 0; i < eoprompt; i++) {
-		if (data[i] == '\r' || data[i] == '\n')
-			c->line_start = 0;
-		else if ((unsigned char)data[i] >= ' ')
-			c->line_start++;
+	/* prompt, then data already in the line (e.g. a recalled command);
+	   a host that goes on with a line shows nothing again */
+	if (startdisp == 0) {
+		if (c->skip_lf && eoprompt && data[0] == '\n') {
+			term_out(c, data + 1, eoprompt - 1);
+		} else if (eoprompt)
+			term_out(c, data, eoprompt);
+		c->skip_lf = 0;
+		c->line_start = 0;
+		for (i = 0; i < eoprompt; i++) {
+			if (data[i] == '\r' || data[i] == '\n')
+				c->line_start = 0;
+			else if ((unsigned char)data[i] >= ' ')
+				c->line_start++;
+		}
 	}
 	c->input_len = (unsigned)(datalen - eoprompt);
 	if (c->input_len > CTERM_INBUF)
 		c->input_len = CTERM_INBUF;
 	memcpy(c->input, data + eoprompt, c->input_len);
 	c->input_pos = c->input_len;
-	if (c->echo)
-		term_out(c, c->input, c->input_len);
+	if (c->echo && startdisp < datalen) {
+		unsigned from = startdisp > eoprompt ? startdisp - eoprompt : 0;
+		term_out(c, c->input + from, c->input_len - from);
+	}
 	c->read_pending = 1;
 
 	/* type-ahead goes into the new read */

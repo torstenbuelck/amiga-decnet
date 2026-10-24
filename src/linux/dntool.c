@@ -9,7 +9,11 @@
  *               nodes NODE [permanent]
  *               task NODE NAME
  *               login NODE
+ *               serve
  *   login is a CTERM terminal session (like SET HOST); Ctrl-] ends it.
+ *   serve is the other end: it waits for SET HOST to this node, asks for
+ *   the password given with -p (no -p: every session is refused) and runs
+ *   a small test loop (lines echoed, "keys" shows key codes, "exit")
  *   -t sets the terminal type it reports (default VT200; VMS knows VT100,
  *   VT102, VT200). VMS still needs SET TERMINAL/INQUIRE (or /DEVICE) for
  *   full-screen programs: CTERM carries no ANSI/CRT capabilities.
@@ -38,6 +42,7 @@
 #include "../dap/dap.h"
 #include "../nml/nml.h"
 #include "../cterm/cterm.h"
+#include "../cterm/ctermh.h"
 
 static const struct { const char *name; const char *addr; } nodes[] = {
 	{ "EUGENE", "23.21" }, { "HOWIE", "23.208" }, { "COLT", "23.209" },
@@ -278,6 +283,154 @@ static int do_login(dn_u16 node, const char *termtype, int verbose)
 	return rc;
 }
 
+/* serve: CTERM host side with a test loop */
+struct serve {
+	struct ctermh h;
+	struct dns *s;
+	const char *password;
+	int state;              /* 0 password, 1 lines, 2 keys, 3 done */
+	int tries;
+	int got_input;
+};
+
+static int serve_net_write(void *ctx, const unsigned char *buf, long n)
+{
+	return dns_write(((struct serve *)ctx)->s, buf, n);
+}
+
+static void serve_out(struct serve *v, const char *s)
+{
+	ctermh_write(&v->h, s, (long)strlen(s));
+}
+
+static void serve_prompt(struct serve *v)
+{
+	static const char pw[] = "Password: ", ln[] = "dntool> ";
+
+	if (v->state == 0)
+		ctermh_read(&v->h, CTH_SECRET, pw, sizeof pw - 1, NULL, 0);
+	else if (v->state == 1)
+		ctermh_read(&v->h, CTH_LINE, ln, sizeof ln - 1, NULL, 0);
+	else if (v->state == 2)
+		ctermh_read(&v->h, CTH_CHAR, NULL, 0, NULL, 0);
+}
+
+static void serve_input(void *ctx, const char *buf, long n, int term)
+{
+	struct serve *v = ctx;
+	char out[CTERMH_MAXLINE * 4 + 64];
+	long i, o;
+
+	v->got_input = 1;
+	switch (v->state) {
+	case 0:
+		if ((size_t)n == strlen(v->password) && !memcmp(buf, v->password, n)) {
+			snprintf(out, sizeof out, "Welcome. Terminal %s, %d x %d.\n"
+			         "Lines are echoed; \"keys\" shows key codes, \"exit\" ends.\n",
+			         v->h.termtype[0] ? v->h.termtype : "?", v->h.width, v->h.height);
+			serve_out(v, out);
+			v->state = 1;
+		} else if (++v->tries >= 3) {
+			serve_out(v, "Access denied.\n");
+			v->state = 3;
+		} else
+			serve_out(v, "Wrong password.\n");
+		break;
+	case 1:
+		if (n == 4 && !strncasecmp(buf, "exit", 4)) {
+			serve_out(v, "Bye.\n");
+			v->state = 3;
+		} else if (n == 4 && !strncasecmp(buf, "keys", 4)) {
+			serve_out(v, "Type keys, q ends.\n");
+			v->state = 2;
+		} else {
+			o = snprintf(out, sizeof out, "[%ld bytes, terminator %02x] ", n, term);
+			memcpy(out + o, buf, n);
+			out[o + n] = '\n';
+			ctermh_write(&v->h, out, o + n + 1);
+		}
+		break;
+	case 2:
+		o = 0;
+		for (i = 0; i < n; i++)
+			o += snprintf(out + o, sizeof out - o, "%02x ", (unsigned char)buf[i]);
+		out[o++] = '\n';
+		ctermh_write(&v->h, out, o);
+		if (n == 1 && buf[0] == 'q')
+			v->state = 1;
+		break;
+	}
+}
+
+static void serve_interrupt(void *ctx, int ch)
+{
+	struct serve *v = ctx;
+	char out[32];
+
+	snprintf(out, sizeof out, "*** interrupt ^%c\n", ch + '@');
+	serve_out(v, out);
+}
+
+static int do_serve(const char *password, int verbose)
+{
+	struct dn_conninfo ci;
+	unsigned char buf[2048];
+	struct serve v;
+	long n;
+
+	if (!password || !*password) {
+		fprintf(stderr, "serve needs a password (-p)\n");
+		return 1;
+	}
+	fprintf(stderr, "waiting for CTERM sessions (object 42)\n");
+	while (!dnenv_stopped()) {
+		double t;
+
+		memset(&v, 0, sizeof v);
+		v.s = dns_accept(CTERM_OBJECT, -1, &ci);
+		if (!v.s)
+			break;
+		fprintf(stderr, "session from %s (%s)\n", dn_ntoa(ci.node), ci.srcname);
+		v.password = password;
+		v.h.net_write = serve_net_write;
+		v.h.input = serve_input;
+		v.h.interrupt = serve_interrupt;
+		v.h.log = cterm_log;
+		v.h.ctx = &v;
+		v.h.verbose = verbose;
+		ctermh_init(&v.h);
+		ctermh_start(&v.h);
+		t = now();
+		while (!v.h.ready && now() - t < 10 && !dnenv_stopped()) {
+			n = dns_read(v.s, buf, sizeof buf, 200);
+			if (n < 0 || (n > 0 && ctermh_net(&v.h, buf, n) < 0))
+				break;
+		}
+		if (v.h.ready) {
+			/* the answer to READ-CHARACTERISTICS, for the welcome */
+			while ((n = dns_read(v.s, buf, sizeof buf, 500)) > 0)
+				if (ctermh_net(&v.h, buf, n) < 0 || v.h.width)
+					break;
+			serve_out(&v, "\nDECnet test host (dntool serve)\n\n");
+			serve_prompt(&v);
+			while (v.state != 3 && !dnenv_stopped()) {
+				n = dns_read(v.s, buf, sizeof buf, 200);
+				if (n < 0 || (n > 0 && ctermh_net(&v.h, buf, n) < 0))
+					break;
+				if (v.got_input) {
+					v.got_input = 0;
+					serve_prompt(&v);
+				}
+			}
+			if (v.state == 3)
+				ctermh_unbind(&v.h);
+		}
+		fprintf(stderr, "session ended\n");
+		dns_close(v.s);
+	}
+	return 0;
+}
+
 static double now(void)
 {
 	struct timespec ts;
@@ -290,7 +443,7 @@ static void usage(const char *prog)
 {
 	fprintf(stderr, "usage: %s [-a area.node] [-i iface] [-v] [-u user] [-p password] [-n] [-t termtype]\n"
 	        "          dir NODE SPEC | get NODE SPEC [LOCALFILE] | nodes NODE [permanent]\n"
-	        "          put NODE LOCALFILE [SPEC] | task NODE NAME | login NODE\n", prog);
+	        "          put NODE LOCALFILE [SPEC] | task NODE NAME | login NODE | serve\n", prog);
 	exit(1);
 }
 
@@ -315,6 +468,13 @@ int main(int argc, char **argv)
 		case 't': termtype = optarg; break;
 		default: usage(argv[0]);
 		}
+	}
+	if (argc - optind == 1 && !strcmp(argv[optind], "serve")) {
+		if (dnenv_open(ifname, addr, verbose))
+			return 1;
+		rc = do_serve(pass, verbose);
+		dnenv_close();
+		return rc;
 	}
 	if (argc - optind < 2)
 		usage(argv[0]);
