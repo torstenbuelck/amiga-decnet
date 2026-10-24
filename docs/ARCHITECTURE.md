@@ -356,6 +356,18 @@ auf echter Hardware nachgetestet):
   lesen (Auflisten, Einzelprüfung bei Lock/Examine), immer Blocking an;
   Öffnen, Schreiben, Löschen, Umbenennen und dncopy beachten NOBLOCK. dndir
   behält NOBLOCK in der Vorlage, wirkungslos.
+* **NSP-Flusssteuerung: vorerst nicht** (Entscheidung 24.10.2026, nach dem
+  A2000-Test neu bewerten). Dateiübertragungen von FOTOFX auf dem A3000:
+  1764/1768/1767 Segmente mit 2/1/2 Wiederholungen (0,1 %), keine NAKs;
+  HOWIE 102 KB ohne Wiederholung. Große Segmente (563–1490 Bytes) haben am
+  Draht genug Abstand für den a2065; Verluste gab es nur bei Salven
+  winziger Segmente (Verzeichnis ohne Blocking: 149 Segmente, 39 %
+  wiederholt), und die fallen mit dn-handler 0.8/dndir 0.3 weg. Kosten
+  dagegen: Segment-Flusssteuerung im CI/CC verlangen und laufend
+  Gutschriften per Link Service schicken; ein Fehler legt den Link still,
+  und ob FOTOFX sie beachtet, ist offen (NAKs ignoriert es). Auf dem echten
+  A2000 (68000) kann der Empfang auch große Salven nicht mehr schaffen —
+  dann mit Messwerten entscheiden.
 * **a2065.device hält einzelne Frames fest.** AMI wiederholte gelegentlich
   ein Disconnect Initiate (3 von ~30 Verbindungen), obwohl HOWIE es nach
   7–13 ms bestätigt hatte; die Wiederholung nach 1 s beantwortete HOWIE mit
