@@ -92,6 +92,11 @@ login first:
 
   $ SET TERMINAL/INQUIRE
 
+Without it, EVE refuses to start ("SYS$INPUT must be supported CRT"),
+and MONITOR draws its frames from + - | and prints every update below
+the last one, so the screen keeps scrolling. SHOW TERMINAL then lists
+"No ANSI_CRT"; after the inquiry it says "ANSI_CRT".
+
 It is best placed in your LOGIN.COM. The terminal program answers the
 inquiry, so its emulation should be set to VT100 or VT220/ANSI.
 
