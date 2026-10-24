@@ -45,6 +45,21 @@ Units 0 to 3 are separate lines: to keep two sessions open at the same
 time, start a second terminal program on unit 1.
 
 
+Term
+----
+Term 4.8 by Olaf Barthel is on Aminet as comm/term/Term.lha. Unpack the
+whole archive into one drawer and start term from there: it adds the
+drawers Fonts and Libs next to it to FONTS: and LIBS: by itself.
+
+Term needs its font GFX.font (in Fonts) for the VT100 line graphics,
+e.g. the frames of VMS MONITOR. It loads the font only when it starts;
+without it the frames show as letters (q, x, l, ...).
+
+Choose dnterm.device and unit 0 in Settings > Serial, then save the
+settings. The default emulation (ANSI/VT220) answers the VMS terminal
+inquiry correctly.
+
+
 Modem commands
 --------------
   ATD node   connect (any key while it dials stops it)
