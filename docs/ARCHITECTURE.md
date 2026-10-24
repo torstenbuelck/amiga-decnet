@@ -346,8 +346,27 @@ auf echter Hardware nachgetestet):
   26 große Segmente: kein Verlust, ~7 s. Der FOTOFX-Fehler mit Blocking
   betrifft nur ACCESS auf fehlende Dateien; NOBLOCK als Vorgabe für FOTOFX
   ist daher zu überdenken.
-* **Kleinigkeit offen**: AMI wiederholte einmal ein Disconnect Initiate,
-  obwohl HOWIE es nach 13 ms bestätigt hatte (HOWIE dann „no link“).
+* **a2065.device hält einzelne Frames fest.** AMI wiederholte gelegentlich
+  ein Disconnect Initiate (3 von ~30 Verbindungen), obwohl HOWIE es nach
+  7–13 ms bestätigt hatte; die Wiederholung nach 1 s beantwortete HOWIE mit
+  „no link“. Abgleich Mitschnitt ↔ `T:dnetd.log` (Versatz aus fünf
+  Ereignissen, Streuung < 20 ms): dnetd verarbeitete das *erste* DC
+  („reason 42“) erst eine Sekunde später, im Moment des zweiten DC; das
+  zweite fand keinen Link mehr. Der Frame war also nicht verloren, sondern
+  lag im Treiber. dnetd holt bei jedem Aufwachen (mindestens jeder Tick)
+  alle fertigen Reads ab, an der Empfangsschleife liegt es nicht. Typisches
+  LANCE-Treiber-Rennen: Ein Frame, der zwischen Abarbeiten des Rings und
+  Quittieren des Interrupts fertig wird, bleibt bis zum nächsten Interrupt
+  liegen. Erklärt auch Segment 62 nach 63–77 (FOTOFX) und 73 vor 72 (HOWIE,
+  23.10.). Ob erst der nächste empfangene Frame oder schon unser eigener
+  Sende-Interrupt den Frame freigibt, trennt die Log-Auflösung (20 ms)
+  nicht. Folgen: beim Disconnect harmlos; bei Daten kann ein festgehaltenes
+  *letztes* Segment einer Salve bis zum Retransmit-Timeout des Senders
+  liegen (am 24.10. nicht als Hänger beobachtet). Möglicher Workaround, falls
+  es stört: wartet dnetd auf ein DC oder ein Lückensegment, nach ~50 ms einen
+  harmlosen Frame senden (z. B. ein zusätzliches Endnode-Hello), um den
+  Treiber anzustoßen — erst am A3000 prüfen, ob Senden überhaupt freigibt.
+  Gehört in die Treiber-Kompatibilitätsliste (Treiberversion noch notieren).
 
 ### dncopy PROGRESS (Stand 23.10.2026)
 * `PROGRESS=WINDOW`: Fenster auf dem Workbench-Schirm (nur Intuition/Graphics
