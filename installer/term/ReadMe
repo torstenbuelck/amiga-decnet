@@ -6,6 +6,10 @@ other DECnet hosts over the network, with CTERM (the protocol behind
 VMS "SET HOST"). The terminal program sees a modem on a serial port:
 it dials a node name instead of a phone number.
 
+The other way round, the optional maintenance login lets one other
+DECnet node log in to an Amiga Shell on this Amiga (see "Maintenance
+login" below; it is off unless you enable it).
+
 
 Requirements
 ------------
@@ -19,12 +23,14 @@ Requirements
 Installation
 ------------
 Double-click "Install-DECnet-Term". It copies dnterm.device to DEVS:
-and the command dntermpatch to DECnet:C.
+and the command dntermpatch to DECnet:C, and asks whether to enable
+the maintenance login.
 From the Shell: cd to this drawer, then
 
   Installer Install-DECnet-Term
 
-To remove it, start Install-DECnet-Term again and choose "Remove".
+To remove it, start Install-DECnet-Term again and choose "Remove";
+that also switches the maintenance login off.
 
 
 Using it
@@ -124,11 +130,51 @@ The line editing keys of the VMS command line (cursor keys, Delete,
 Ctrl-U, Ctrl-H, Ctrl-E) and Ctrl-Y work as on a VT terminal.
 
 
+Maintenance login
+-----------------
+WARNING: the maintenance login gives a full Amiga Shell to whoever
+uses the allowed node and knows the password. From there everything
+can be done that you can do at this Amiga's keyboard: read, change and
+delete every file, start any program. Enable it only if you need it,
+and only for a node you trust.
+
+- Only one node may connect; it is asked during the installation. A
+  connect from any other node is refused before anything is asked.
+- After the connect comes "Password:" (no echo). Three wrong answers
+  end the connection, each after a pause.
+- The password is stored as plain text in ENVARC:DECnet/maint-password
+  (and ENV:DECnet/maint-password while the Amiga runs). Every program
+  on this Amiga can read it.
+- DECnet does not encrypt: the password and the whole session cross
+  the network in clear text, readable by anyone who can watch it.
+- Never use a password you use anywhere else.
+
+On the allowed node, log in like to any CTERM host:
+
+  $ SET HOST 1.10              (VMS, 1.10 being this Amiga)
+  dntool login 1.10            (Linux, from this project)
+
+and type the password. "endcli" ends the Shell and the connection.
+Ctrl-C and Ctrl-Y stop the running command. The Shell starts in SYS:
+and runs S:Shell-Startup first.
+
+dnmaint starts with DECnet (DECnet-Start runs
+DECnet:S/DECnet-Start-Term) and writes what happens to T:dnmaint.log:
+every connect with the node address, and whether it was accepted. "dnmaint STOP" ends it until the
+next boot. To change the node or the password, or to switch the login
+off for good, run Install-DECnet-Term again.
+
+Programs that draw on the screen through the console (such as More)
+work; programs that open windows of their own show them on the
+Amiga's screen, not on the remote terminal.
+
+
 Tested
 ------
 Term 4.8 and VAXterm 2.4 on AmigaOS 3.1 (Amiberry), with OpenVMS 7.2
 hosts: login, DCL, EVE and MONITOR. dnterm.device also on AmigaOS 2.04
-with a 68000. Reports with other terminal programs and hosts
+with a 68000. The maintenance login on AmigaOS 3.9 (Amiberry),
+from OpenVMS 7.2 (SET HOST) and from Linux (dntool login). Reports with other terminal programs and hosts
 are welcome.
 
 

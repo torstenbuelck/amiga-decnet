@@ -1,48 +1,226 @@
-; $VER: Install-DECnet-Term 0.2 (24.10.2026)
+; $VER: Install-DECnet-Term 0.3 (24.10.2026)
 ;
-; Installer script for dnterm.device, the CTERM terminal add-on of the
-; Amiga DECnet endnode. Needs DECnet (LIBS:decnet.library) and AmigaOS 2.04.
+; Installer script for DECnet-Term, the CTERM add-on of the Amiga DECnet
+; endnode: dnterm.device (terminal sessions to other nodes) and, if the
+; user enables it, the maintenance login (one other node may log in to an
+; Amiga Shell). Needs DECnet (LIBS:decnet.library) and AmigaOS 2.04.
 ;
 ; Installs:
 ;   DEVS:dnterm.device
-;   DECnet:C/dntermpatch     makes a copy of a program use dnterm.device
+;   DECnet:C/dntermpatch          makes a copy of a program use dnterm.device
+; and with the maintenance login:
+;   DECnet:C/dnmaint              the maintenance login service
+;   DECnet:S/DECnet-Start-Term    started by DECnet-Start
+;   ENVARC:DECnet/maint-node      the node allowed to log in
+;   ENVARC:DECnet/maint-password  its password (plain text)
 ;
 ; Copyright (C) 2026  Torsten Bülck (tuti)
 ; SPDX-License-Identifier: GPL-2.0-or-later
 
-(set #version "0.2")
+(set #version "0.3")
 (set @app-name "DECnet-Term")
 
 (if (< (/ (getversion) 65536) 37)
-	(abort "dnterm.device needs AmigaOS 2.04 (V37) or newer.")
+	(abort "DECnet-Term needs AmigaOS 2.04 (V37) or newer.")
 )
 
+; ---------------------------------------------------------------- helpers
+
+; #addr must be "area.node", area 1-63, node 1-1023. Sets #addr-ok.
+(procedure P_CHECKADDR
+	(set #addr-ok 0)
+	(if (patmatch "[0-9]#[0-9].[0-9]#[0-9]" #addr)
+		(
+			(set #i 0)
+			(while (<> (substr #addr #i 1) ".") (set #i (+ #i 1)))
+			(set #area (+ 0 (substr #addr 0 #i)))
+			(set #node (+ 0 (substr #addr (+ #i 1))))
+			(if (AND (> #area 0) (< #area 64) (> #node 0) (< #node 1024))
+				(set #addr-ok 1)
+			)
+		)
+	)
+)
+
+; #val into ENVARC:DECnet/#var and ENV:DECnet/#var (no newline, for getenv)
+(procedure P_SAVEVAR
+	(textfile (prompt "") (help "") (dest (tackon "ENVARC:DECnet" #var)) (append #val))
+	(textfile (prompt "") (help "") (dest (tackon "ENV:DECnet" #var)) (append #val))
+)
+
+; ---------------------------------------------------------------- maintenance login
+
+; stop dnmaint and delete it with its settings
+(procedure P_MAINT_OFF
+	(if (exists "DECnet:C/dnmaint")
+		(run "DECnet:C/dnmaint >NIL: STOP")
+	)
+	(delete "DECnet:C/dnmaint" (optional "force") (prompt "") (help ""))
+	(delete "DECnet:S/DECnet-Start-Term" (optional "force") (prompt "") (help ""))
+	(delete "ENVARC:DECnet/maint-node" (optional "force") (prompt "") (help ""))
+	(delete "ENVARC:DECnet/maint-password" (optional "force") (prompt "") (help ""))
+	(delete "ENV:DECnet/maint-node" (optional "force") (prompt "") (help ""))
+	(delete "ENV:DECnet/maint-password" (optional "force") (prompt "") (help ""))
+)
+
+(procedure P_MAINT_ON
+	; ---- the node allowed to log in: a default only when updating, never
+	; on a new setup (a careless click must not let a stranger in)
+	(set #addr "")
+	(if #maint-was-on (set #addr (getenv "DECnet/maint-node")))
+	(set #addr-ok 0)
+	(while (NOT #addr-ok)
+		(set #addr (askstring
+			(prompt "Which node may log in?\n\n"
+			        "Address (area.node) or name from your node list of the ONE "
+			        "DECnet node allowed to use the maintenance login. Connects "
+			        "from every other node are refused.")
+			(help "Only this node gets the password prompt; dnmaint rejects all "
+			      "others before anything is asked. Choose the machine you "
+			      "maintain this Amiga from.\n\n" @askstring-help)
+			(default #addr)
+		))
+		(P_CHECKADDR)
+		; a name: 1-6 letters and digits, at least one letter
+		(if (AND (NOT #addr-ok) (> (strlen #addr) 0) (< (strlen #addr) 7)
+		         (patmatch "#[A-Za-z0-9]" #addr) (NOT (patmatch "#[0-9]" #addr)))
+			(set #addr-ok 1)
+		)
+		(if (NOT #addr-ok)
+			(message "\"" #addr "\" is neither a DECnet address (area.node, "
+			         "area 1-63, node 1-1023) nor a node name (1-6 letters "
+			         "and digits).")
+		)
+	)
+
+	; ---- the password
+	(set #pw "")
+	(set #pw-ok 0)
+	(while (NOT #pw-ok)
+		(set #pw (askstring
+			(prompt "Password for the maintenance login.\n\n"
+			        "It is shown here as you type it and stored as plain text in "
+			        "ENVARC:DECnet/maint-password. Use one you use nowhere else."
+			        (if #maint-was-on "\n\nLeave it empty to keep the current password." ""))
+			(help "The other node asks for it after the connect, without echo. "
+			      "Three wrong answers end the connection.\n\n" @askstring-help)
+			(default "")
+		))
+		(if (OR (<> #pw "") #maint-was-on)
+			(set #pw-ok 1)
+			(message "The maintenance login needs a password.")
+		)
+	)
+
+	; ---- files
+	(copyfiles
+		(prompt "Copying dnmaint to DECnet:C")
+		(help @copyfiles-help)
+		(source "C/dnmaint")
+		(dest "DECnet:C")
+	)
+	(copyfiles
+		(prompt "Copying DECnet-Start-Term to DECnet:S")
+		(help @copyfiles-help)
+		(source "S/DECnet-Start-Term")
+		(dest "DECnet:S")
+	)
+	(makedir "ENVARC:DECnet" (prompt "") (help ""))
+	(makedir "ENV:DECnet" (prompt "") (help ""))
+	(set #var "maint-node") (set #val #addr) (P_SAVEVAR)
+	(if (<> #pw "")
+		((set #var "maint-password") (set #val #pw) (P_SAVEVAR))
+	)
+	(set #pw "")
+
+	; ---- start now: only with dnetd running; an older dnmaint goes first
+	(if (= 0 (run "DECnet:C/dnetd >NIL: CHECK"))
+		(if (askbool
+			(prompt "Start the maintenance login now?\n\n"
+			        "Otherwise it starts with DECnet at the next boot.")
+			(help "Runs DECnet:S/DECnet-Start-Term (dnmaint, log in T:dnmaint.log).")
+			(choices "Start" "Later")
+			(default 1))
+			(
+				(run "DECnet:C/dnmaint >NIL: STOP")
+				(execute "DECnet:S/DECnet-Start-Term")
+			)
+		)
+	)
+	(set #maint-text (cat "\n\nThe maintenance login is enabled for " #addr ". "
+	                      "Read \"Maintenance login\" in the ReadMe."))
+)
+
+(procedure P_MAINT
+	(set #maint-was-on (exists "ENVARC:DECnet/maint-password"))
+	(set #maint-text "")
+	(if (askbool
+		(prompt "Enable the maintenance login?\n\n"
+		        "It lets ONE other DECnet node log in to an Amiga Shell on this "
+		        "Amiga (VMS: SET HOST), after a password. Whoever has that node "
+		        "and the password can do everything on this Amiga.\n\n"
+		        "Passwords travel unencrypted over the network. Read "
+		        "\"Maintenance login\" in the ReadMe before you enable it.")
+		(help "dnmaint answers CTERM connects (object 42) from the node you "
+		      "name, asks for the password and then starts a Shell. Everything "
+		      "you could do at this Amiga's keyboard can be done from there.\n\n"
+		      "Answer \"No\" to leave it off (or to switch it off again).")
+		(choices "Enable" "No")
+		(default #maint-was-on))
+		(
+			; DECnet-Start of older DECnet versions does not run the add-on
+			(if (< (getversion "DECnet:C/dnetd") 6)
+				(message "Your DECnet installation is older than this add-on: its "
+				         "DECnet-Start would not start the maintenance login.\n\n"
+				         "Update DECnet first (Install-DECnet), then run this "
+				         "installation again to enable it.")
+				(P_MAINT_ON)
+			)
+		)
+		(if #maint-was-on
+			(
+				(P_MAINT_OFF)
+				(set #maint-text "\n\nThe maintenance login has been switched off.")
+			)
+		)
+	)
+)
+
+; ---------------------------------------------------------------- remove
+
 (procedure P_REMOVE
-	(if (NOT (exists "DEVS:dnterm.device"))
-		(exit "dnterm.device is not installed." (quiet))
+	(if (AND (NOT (exists "DEVS:dnterm.device"))
+	         (NOT (exists "ENVARC:DECnet/maint-password")))
+		(exit "DECnet-Term is not installed." (quiet))
 	)
 	(if (askbool
-		(prompt "Remove dnterm.device?\n\n"
-		        "This deletes DEVS:dnterm.device. Close your terminal program first.")
-		(help "Answer \"Remove\" to delete dnterm.device from this Amiga.")
+		(prompt "Remove DECnet-Term?\n\n"
+		        "This deletes DEVS:dnterm.device and switches the maintenance "
+		        "login off. Close your terminal program first.")
+		(help "Answer \"Remove\" to delete DECnet-Term from this Amiga.")
 		(choices "Remove" "Cancel")
 		(default 0))
 		(
 			(delete "DEVS:dnterm.device" (optional "force") (prompt "") (help ""))
 			(if (<> (getassign "DECnet") "")
-				(delete "DECnet:C/dntermpatch" (optional "force") (prompt "") (help ""))
+				(
+					(delete "DECnet:C/dntermpatch" (optional "force") (prompt "") (help ""))
+					(P_MAINT_OFF)
+				)
 			)
-			(exit "dnterm.device has been removed." (quiet))
+			(exit "DECnet-Term has been removed." (quiet))
 		)
 		(exit (quiet))
 	)
 )
 
+; ---------------------------------------------------------------- install
+
 (procedure P_INSTALL
 	(if (NOT (exists "LIBS:decnet.library"))
 		(abort "DECnet is not installed (LIBS:decnet.library is missing).\n\n"
-		       "dnterm.device logs in to other nodes through DECnet. Install "
-		       "the DECnet package first, then start this installation again.")
+		       "DECnet-Term works through DECnet. Install the DECnet package "
+		       "first, then start this installation again.")
 	)
 	(copylib
 		(prompt "Copying dnterm.device to DEVS:")
@@ -51,22 +229,32 @@
 		(dest "DEVS:")
 		(confirm)
 	)
-	; dntermpatch goes to the DECnet commands, which are in the Shell path
+	; the commands go to the DECnet commands, which are in the Shell path
+	(set #maint-text "")
 	(if (<> (getassign "DECnet") "")
-		(copyfiles
-			(prompt "Copying dntermpatch to DECnet:C")
-			(help @copyfiles-help)
-			(source "C/dntermpatch")
-			(dest "DECnet:C")
+		(
+			(copyfiles
+				(prompt "Copying dntermpatch to DECnet:C")
+				(help @copyfiles-help)
+				(source "C/dntermpatch")
+				(dest "DECnet:C")
+			)
+			(P_MAINT)
 		)
+		(set #maint-text "\n\nThe maintenance login needs the DECnet: assign "
+		                 "(DECnet started); it was not set up.")
 	)
-	(exit "dnterm.device " #version " is installed in DEVS:.\n\n"
+	(exit "DECnet-Term " #version " is installed (dnterm.device in DEVS:).\n\n"
 	      "In your terminal program choose dnterm.device, unit 0, instead of "
 	      "serial.device. Then type ATD and the name or address of a node, "
-	      "for example ATD 1.10. Read the ReadMe for more." (quiet))
+	      "for example ATD 1.10. Read the ReadMe for more." #maint-text (quiet))
 )
 
-(welcome "DECnet-Term " #version ": terminal sessions to DECnet nodes.\n\n"
+; ---------------------------------------------------------------- main
+
+; The icon has MINUSER=AVERAGE: at novice level the Installer would
+; answer the maintenance login question by itself (with its default).
+(welcome "DECnet-Term " #version ": terminal sessions to and from DECnet nodes.\n\n"
          "Copyright (C) 2026 Torsten Bülck (tuti)\n"
          "https://forum.classic-computing.de\n"
          "GNU GPL v2 or later, ABSOLUTELY NO WARRANTY.")
@@ -74,7 +262,7 @@
 (if (= 1 (askchoice
 	(prompt "What do you want to do?")
 	(help @askchoice-help)
-	(choices "Install or update dnterm.device" "Remove dnterm.device")
+	(choices "Install or update DECnet-Term" "Remove DECnet-Term")
 	(default 0)))
 	(P_REMOVE)
 	(P_INSTALL)

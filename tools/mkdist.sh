@@ -19,6 +19,7 @@ make -C "$DIR/src/amiga" >/dev/null
 make -C "$DIR/src/apps" >/dev/null
 make -C "$DIR/src/handler" >/dev/null
 make -C "$DIR/src/term" >/dev/null
+make -C "$DIR/src/maint" >/dev/null
 
 rm -rf "$OUT"
 mkdir -p "$PKG"/{C,L,S,Libs,Storage,Icons}
@@ -38,17 +39,18 @@ cp "$ICONS"/{Disk,Node,Dir,Text,Picture,File,DECnet}.info "$PKG/Icons/"   # DN: 
 
 # the terminal add-on
 TPKG="$OUT/DECnet-Term"
-mkdir -p "$TPKG/Devs" "$TPKG/C"
+mkdir -p "$TPKG/Devs" "$TPKG/C" "$TPKG/S"
 cp "$DIR/installer/term/Install-DECnet-Term" "$DIR/installer/term/ReadMe" "$TPKG/"
 cp "$DIR/src/term/dnterm.device" "$TPKG/Devs/"
-cp "$DIR/src/term/dntermpatch" "$TPKG/C/"
+cp "$DIR/src/term/dntermpatch" "$DIR/src/maint/dnmaint" "$TPKG/C/"
+cp "$DIR/installer/term/S/DECnet-Start-Term" "$TPKG/S/"
 cp "$ICONS/DECnet-Term.info" "$OUT/"
 cp "$ICONS"/{Install-DECnet-Term,ReadMe}.info "$TPKG/"
 rm -r "$ICONS"
 
 # AmigaDOS wants LF line ends and no trailing CR; make sure.
 for f in "$PKG/Install-DECnet" "$PKG/ReadMe" "$PKG"/S/* "$PKG"/Storage/* \
-         "$TPKG/Install-DECnet-Term" "$TPKG/ReadMe"; do
+         "$TPKG/Install-DECnet-Term" "$TPKG/ReadMe" "$TPKG"/S/*; do
 	sed -i 's/\r$//' "$f"
 done
 # Installer and ReadMe are UTF-8 in the repository; the Amiga uses ISO-8859-1.

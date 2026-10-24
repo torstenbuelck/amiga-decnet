@@ -1,9 +1,18 @@
 /*
  * dnmaint - maintenance login service (CTERM host on object 42).
  *
- * Usage: dnmaint VERBOSE/S
+ * Usage: dnmaint [VERBOSE] [LOG=file]
+ *        dnmaint STOP
  *
- *   VERBOSE  log the CTERM messages (ctermh) to the output
+ *   VERBOSE  log the CTERM messages (ctermh) as well
+ *   LOG      append the messages to file, opened for each line (as
+ *            dnetd does), instead of the output
+ *   STOP     end the running dnmaint (as Ctrl-C) and wait until it is
+ *            gone; return code 5 if none runs
+ *
+ * One dnmaint at a time: its public port "DECnet-Maint" tells STOP and a
+ * second start that one runs (the second ends at once, before it touches
+ * the log).
  *
  * Started from DECnet-Start when the installer enabled it. Waits for
  * connects on object 42, rejects every node but the configured one
@@ -21,15 +30,20 @@
 #include <proto/dos.h>
 #include <proto/decnet.h>
 
+#include <stdarg.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "../amiga/dnmsg.h"
 #include "dnmaint.h"
 
-static const char version[] = "$VER: dnmaint 0.1 (24.10.2026)";
+static const char version[] = "$VER: dnmaint 0.2 (24.10.2026)";
+
+#define MAINT_PORTNAME "DECnet-Maint"
 
 struct Library *DECnetBase;
 
+static const char *logfile;
 static struct mcfg cfg;
 static struct msession sess;    /* large: keep it off the stack */
 
@@ -83,6 +97,55 @@ static BOOL dnetd_running(void)
 	return r;
 }
 
+/* a message to the log file or the output */
+void mlog(const char *fmt, ...)
+{
+	char buf[200];
+	va_list ap;
+	BPTR fh;
+
+	va_start(ap, fmt);
+	vsnprintf(buf, sizeof buf, fmt, ap);
+	va_end(ap);
+	if (logfile && (fh = Open((STRPTR)logfile, MODE_READWRITE)) != 0) {
+		Seek(fh, 0, OFFSET_END);
+		Write(fh, buf, strlen(buf));
+		Close(fh);
+	} else
+		PutStr((STRPTR)buf);
+}
+
+/* STOP: Ctrl-C to the running dnmaint, then wait up to 30 s (a session
+   may take a while to end: con_stop waits up to 20 s for the Shell) */
+static int stop_dnmaint(void)
+{
+	struct MsgPort *p;
+	BOOL found;
+	int i;
+
+	Forbid();
+	p = FindPort((STRPTR)MAINT_PORTNAME);
+	if (p && p->mp_SigTask)
+		Signal((struct Task *)p->mp_SigTask, SIGBREAKF_CTRL_C);
+	Permit();
+	if (!p) {
+		PutStr((STRPTR)"dnmaint is not running\n");
+		return RETURN_WARN;
+	}
+	for (i = 0; i < 600; i++) {
+		Forbid();
+		found = FindPort((STRPTR)MAINT_PORTNAME) != NULL;
+		Permit();
+		if (!found) {
+			PutStr((STRPTR)"dnmaint stopped\n");
+			return RETURN_OK;
+		}
+		Delay(5);
+	}
+	PutStr((STRPTR)"dnmaint does not stop\n");
+	return RETURN_ERROR;
+}
+
 static BOOL broken(void)
 {
 	return (SetSignal(0, 0) & SIGBREAKF_CTRL_C) != 0;
@@ -90,33 +153,63 @@ static BOOL broken(void)
 
 int main(void)
 {
-	LONG args[1] = { 0 };
+	LONG args[3] = { 0, 0, 0 };
 	struct RDArgs *rd;
+	struct MsgPort *port = NULL;
 	struct DnListener *ls;
 	struct DnConnInfo ci;
 	struct DnLink *l;
 	LONG rc = RETURN_FAIL;
 	BOOL ok;
+	BPTR fh;
 
 	(void)version;
-	rd = ReadArgs((STRPTR)"VERBOSE/S", args, NULL);
+	rd = ReadArgs((STRPTR)"VERBOSE/S,LOG/K,STOP/S", args, NULL);
 	if (!rd) {
 		PrintFault(IoErr(), (STRPTR)"dnmaint");
 		return RETURN_FAIL;
 	}
+	if (args[2]) {
+		rc = stop_dnmaint();
+		FreeArgs(rd);
+		return rc;
+	}
+	/* one at a time: the port first, before the log is touched */
+	port = CreateMsgPort();
+	if (!port) {
+		FreeArgs(rd);
+		return RETURN_FAIL;
+	}
+	Forbid();
+	if (FindPort((STRPTR)MAINT_PORTNAME)) {
+		Permit();
+		PutStr((STRPTR)"dnmaint: already running\n");
+		DeleteMsgPort(port);
+		FreeArgs(rd);
+		return RETURN_WARN;
+	}
+	port->mp_Node.ln_Name = (char *)MAINT_PORTNAME;
+	port->mp_Node.ln_Pri = -128;
+	AddPort(port);
+	Permit();
+	logfile = (const char *)args[1];
+	if (logfile && (fh = Open((STRPTR)logfile, MODE_NEWFILE)) != 0)
+		Close(fh);                      /* start empty */
+
 	DECnetBase = OpenLibrary((STRPTR)"decnet.library", 1);
 	if (!DECnetBase || DECnetBase->lib_Version < 1 ||
 	    (DECnetBase->lib_Version == 1 && DECnetBase->lib_Revision < 2)) {
-		PutStr((STRPTR)"dnmaint: needs decnet.library 1.2\n");
+		mlog("dnmaint: needs decnet.library 1.2\n");
 		goto out;
 	}
 	if (cfg_load(&cfg))
-		PutStr((STRPTR)"dnmaint: ENV:DECnet/maint-node or maint-password not set, every connect is refused\n");
+		mlog("dnmaint: ENV:DECnet/maint-node or maint-password not set, every connect is refused\n");
 	ls = DnListen(MAINT_OBJECT, NULL);
 	if (!ls) {
-		PutStr((STRPTR)"dnmaint: cannot serve object 42 (taken, or dnetd not running)\n");
+		mlog("dnmaint: cannot serve object 42 (taken, or dnetd not running)\n");
 		goto out;
 	}
+	mlog("dnmaint: serving object 42, Ctrl-C or dnmaint STOP ends\n");
 	while (!broken()) {
 		l = DnAccept(ls, &ci, 1000);
 		if (!l) {
@@ -124,15 +217,15 @@ int main(void)
 			   then end, instead of spinning (a new dnetd would not
 			   know our listener anyway) */
 			if (!dnetd_running()) {
-				PutStr((STRPTR)"dnmaint: dnetd has stopped, ending\n");
+				mlog("dnmaint: dnetd has stopped, ending\n");
 				break;
 			}
 			continue;
 		}
 		ok = cfg_load(&cfg) == 0 && node_allowed(&cfg, ci.dci_Node);
-		Printf("dnmaint: connect from %ld.%ld %s\n",
-		       (LONG)(ci.dci_Node >> 10), (LONG)(ci.dci_Node & 1023),
-		       (LONG)(ok ? "accepted" : "refused"));
+		mlog("dnmaint: connect from %ld.%ld %s\n",
+		     (long)(ci.dci_Node >> 10), (long)(ci.dci_Node & 1023),
+		     ok ? "accepted" : "refused");
 		if (!ok) {
 			DnAnswer(l, DNREASON_ACCESS, NULL, 0);
 			DnClose(l);
@@ -147,7 +240,7 @@ int main(void)
 			session_run(&sess);
 		}
 		session_end(&sess);             /* closes the link */
-		PutStr((STRPTR)"dnmaint: session ended\n");
+		mlog("dnmaint: session ended\n");
 	}
 	DnUnlisten(ls);
 	rc = RETURN_OK;
@@ -155,6 +248,8 @@ out:
 	memset(&cfg, 0, sizeof cfg);    /* no password left in memory */
 	if (DECnetBase)
 		CloseLibrary(DECnetBase);
+	RemPort(port);
+	DeleteMsgPort(port);
 	FreeArgs(rd);
 	return rc;
 }

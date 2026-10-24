@@ -260,5 +260,5 @@ void session_interrupt(void *ctx, int ch)
 void session_log(void *ctx, const char *msg)
 {
 	(void)ctx;
-	Printf("dnmaint: %s\n", (LONG)msg);
+	mlog("dnmaint: %s\n", msg);
 }

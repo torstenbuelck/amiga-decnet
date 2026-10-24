@@ -1,0 +1,9 @@
+; DECnet-Start-Term - starts the maintenance login (dnmaint) of
+; DECnet-Term. Install-DECnet-Term puts it here when the maintenance
+; login is enabled; DECnet-Start runs it after dnetd.
+; Settings: ENV:DECnet/maint-node, ENV:DECnet/maint-password
+; Log: T:dnmaint.log. Stop it with: dnmaint STOP
+If EXISTS ENV:DECnet/maint-password
+  ; a second one ends at once ("already running")
+  Run >NIL: dnmaint LOG=T:dnmaint.log
+EndIf

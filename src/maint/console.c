@@ -186,7 +186,7 @@ void con_packet(struct msession *s, struct DosPacket *dp)
 			s->sigtask = sender(dp);
 		ReplyPkt(dp, DOSTRUE, 0);
 		if (s->cth.verbose)
-			Printf("dnmaint: console opened (%ld open)\n", (LONG)s->handles);
+			mlog("dnmaint: console opened (%ld open)\n", (long)s->handles);
 		break;
 	case ACTION_END:
 		/* one handle on us closed; the Shell is gone when the last
@@ -195,7 +195,7 @@ void con_packet(struct msession *s, struct DosPacket *dp)
 		if (s->handles > 0 && --s->handles == 0)
 			s->shell_gone = TRUE;
 		if (s->cth.verbose)
-			Printf("dnmaint: console closed (%ld open)\n", (LONG)s->handles);
+			mlog("dnmaint: console closed (%ld open)\n", (long)s->handles);
 		break;
 	case ACTION_READ:
 		if (s->readpkt) {
@@ -353,8 +353,8 @@ void con_stop(struct msession *s)
 		/* a handle is still open (a command that neither reads nor
 		   stops): deleting the port would crash whoever uses it later.
 		   Leave it behind, ignoring messages: that one hangs instead */
-		Printf("dnmaint: %ld console handle(s) still open, port left behind\n",
-		       (LONG)s->handles);
+		mlog("dnmaint: %ld console handle(s) still open, port left behind\n",
+		     (long)s->handles);
 		s->conport->mp_Flags = PA_IGNORE;
 		s->conport = NULL;
 		return;

@@ -17,6 +17,10 @@ Which >NIL: dnetd
 If WARN
   Path DECnet:src/amiga DECnet:src/apps ADD
 EndIf
+Which >NIL: dnmaint
+If WARN
+  Path DECnet:src/maint ADD
+EndIf
 
 ; once per boot: library path, node names
 If NOT EXISTS ENV:DECnet/setup-done
@@ -51,6 +55,12 @@ If WARN
   Echo "DECnet node {ADDR} started (log: T:dnetd.log)"
 Else
   Echo "dnetd is already running"
+EndIf
+
+; the maintenance login (installed: DECnet-Term's DECnet-Start-Term),
+; when a password is set
+If EXISTS ENV:DECnet/maint-password
+  Run >NIL: dnmaint LOG=T:dnmaint.log
 EndIf
 
 ; DN: file system (dn-handler), mounted once, after dnetd: a

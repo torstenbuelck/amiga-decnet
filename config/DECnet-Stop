@@ -5,4 +5,8 @@ Which >NIL: dnetd
 If WARN
   Path DECnet:src/amiga DECnet:src/apps ADD
 EndIf
+Which >NIL: dnmaint
+If WARN
+  Path DECnet:src/maint ADD
+EndIf
 dnetd STOP

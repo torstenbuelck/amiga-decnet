@@ -64,6 +64,7 @@ struct msession {
 };
 
 /* dnmaint.c */
+void mlog(const char *fmt, ...);
 int  cfg_load(struct mcfg *cfg);
 BOOL node_allowed(const struct mcfg *cfg, UWORD node);
 

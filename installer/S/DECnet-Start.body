@@ -50,6 +50,12 @@ Else
   Echo "dnetd is already running"
 EndIf
 
+; add-ons that start with DECnet (DECnet-Term: the maintenance login),
+; after dnetd runs
+If EXISTS DECnet:S/DECnet-Start-Term
+  Execute DECnet:S/DECnet-Start-Term
+EndIf
+
 ; DN: file system (dn-handler), mounted once, after dnetd: a
 ; failing Mount stops this script
 If NOT EXISTS ENV:DECnet/dn-mounted

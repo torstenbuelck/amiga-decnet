@@ -283,7 +283,7 @@ ICONS = [
     ("ReadMe", "project", page, "More", []),             # OS 2.04 has no MultiView
     ("DECnet", "drawer", drawer, None, []),
     # the DECnet-Term add-on package
-    ("Install-DECnet-Term", "project", installer, "Installer", ["APPNAME=DECnet-Term"]),
+    ("Install-DECnet-Term", "project", installer, "Installer", ["APPNAME=DECnet-Term", "MINUSER=AVERAGE"]),
     ("DECnet-Term", "drawer", drawer, None, []),
     ("Disk", "disk", drive, None, []),
     ("Node", "drawer", vax, None, []),
