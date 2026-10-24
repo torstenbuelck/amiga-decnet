@@ -135,6 +135,11 @@ in the Shell:
 
 The icons DN: uses are in DECnet/Icons; you may replace them.
 
+dnetd writes its messages to T:dnetd.log. If it does not start (wrong
+driver or unit, for example), DECnet-Start says so and shows the log.
+"dnetd CHECK" tells in a script whether dnetd runs (return code 0,
+otherwise 5); DECnet-Stop, or "dnetd STOP", ends it.
+
 
 Network cards
 -------------

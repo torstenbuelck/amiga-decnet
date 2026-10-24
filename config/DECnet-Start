@@ -11,10 +11,16 @@
 
 Assign >NIL: DECnet: Transfer:DECnet
 
-; once per boot: library path, commands, node names
+; the commands, in the path of the Shell running this script (the path
+; belongs to that Shell, so check every time)
+Which >NIL: dnetd
+If WARN
+  Path DECnet:src/amiga DECnet:src/apps ADD
+EndIf
+
+; once per boot: library path, node names
 If NOT EXISTS ENV:DECnet/setup-done
   Assign LIBS: DECnet:src/amiga ADD
-  Path DECnet:src/amiga DECnet:src/apps ADD
   If NOT EXISTS ENV:DECnet
     MakeDir ENV:DECnet
   EndIf
@@ -22,18 +28,34 @@ If NOT EXISTS ENV:DECnet/setup-done
 EndIf
 Copy DECnet:config/nodes ENV:DECnet/nodes QUIET
 
-; DN: file system (dn-handler), mounted once
-If NOT EXISTS ENV:DECnet/dn-mounted
-  Mount DN: FROM DECnet:config/Mountlist
-  Echo >ENV:DECnet/dn-mounted "1"
-EndIf
-
-Status >NIL: COMMAND=dnetd
+dnetd >NIL: CHECK
 If WARN
-  ; started by its bare name, so that "Status COMMAND=dnetd" finds it
+  ; started by its bare name, found through the path
   Run >NIL: dnetd ADDR={ADDR} UNIT={UNIT} DEVICE={DEVICE} LOG=T:dnetd.log
+  ; give it time to open the device, then ask whether it runs (Run
+  ; >NIL: hides every error, e.g. a wrong device or unit)
+  ; (each If tests the command right before it: EndIf resets the RC)
   Wait 2
+  dnetd >NIL: CHECK
+  If WARN
+    Wait 3
+    dnetd >NIL: CHECK
+    If WARN
+      Echo "dnetd did not start, see T:dnetd.log:"
+      If EXISTS T:dnetd.log
+        Type T:dnetd.log
+      EndIf
+      Quit 5
+    EndIf
+  EndIf
   Echo "DECnet node {ADDR} started (log: T:dnetd.log)"
 Else
   Echo "dnetd is already running"
+EndIf
+
+; DN: file system (dn-handler), mounted once, after dnetd: a
+; failing Mount stops this script
+If NOT EXISTS ENV:DECnet/dn-mounted
+  Mount DN: FROM DECnet:config/Mountlist
+  Echo >ENV:DECnet/dn-mounted "1"
 EndIf

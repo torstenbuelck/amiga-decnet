@@ -23,6 +23,7 @@
 
 #include <string.h>
 
+#include "../amiga/dnmsg.h"
 #include "dnmaint.h"
 
 static const char version[] = "$VER: dnmaint 0.1 (24.10.2026)";
@@ -72,6 +73,16 @@ BOOL node_allowed(const struct mcfg *cfg, UWORD node)
 	return cfg->node != 0 && node == cfg->node;
 }
 
+static BOOL dnetd_running(void)
+{
+	BOOL r;
+
+	Forbid();
+	r = FindPort((STRPTR)DN_PORTNAME) != NULL;
+	Permit();
+	return r;
+}
+
 static BOOL broken(void)
 {
 	return (SetSignal(0, 0) & SIGBREAKF_CTRL_C) != 0;
@@ -108,8 +119,16 @@ int main(void)
 	}
 	while (!broken()) {
 		l = DnAccept(ls, &ci, 1000);
-		if (!l)
+		if (!l) {
+			/* NULL after a timeout, or at once when dnetd is gone:
+			   then end, instead of spinning (a new dnetd would not
+			   know our listener anyway) */
+			if (!dnetd_running()) {
+				PutStr((STRPTR)"dnmaint: dnetd has stopped, ending\n");
+				break;
+			}
 			continue;
+		}
 		ok = cfg_load(&cfg) == 0 && node_allowed(&cfg, ci.dci_Node);
 		Printf("dnmaint: connect from %ld.%ld %s\n",
 		       (LONG)(ci.dci_Node >> 10), (LONG)(ci.dci_Node & 1023),

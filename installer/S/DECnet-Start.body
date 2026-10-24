@@ -25,11 +25,26 @@ If NOT EXISTS ENV:DECnet/setup-done
   Echo >ENV:DECnet/setup-done "1"
 EndIf
 
-Status >NIL: COMMAND=dnetd
+dnetd >NIL: CHECK
 If WARN
-  ; started by its bare name, so that "Status COMMAND=dnetd" finds it
+  ; started by its bare name, found through the path
   Run >NIL: dnetd ADDR={ADDR} UNIT={UNIT} DEVICE={DEVICE} LOG=T:dnetd.log
+  ; give it time to open the device, then ask whether it runs (Run
+  ; >NIL: hides every error, e.g. a wrong device or unit)
+  ; (each If tests the command right before it: EndIf resets the RC)
   Wait 2
+  dnetd >NIL: CHECK
+  If WARN
+    Wait 3
+    dnetd >NIL: CHECK
+    If WARN
+      Echo "dnetd did not start, see T:dnetd.log:"
+      If EXISTS T:dnetd.log
+        Type T:dnetd.log
+      EndIf
+      Quit 5
+    EndIf
+  EndIf
   Echo "DECnet node {ADDR} started (log: T:dnetd.log)"
 Else
   Echo "dnetd is already running"
