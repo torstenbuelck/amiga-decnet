@@ -463,6 +463,33 @@ auf echter Hardware nachgetestet):
   (≤ 16 Byte). `dnnodes` schickt so die NICE-Version 4.0.0 (RSX erwartet sie,
   VMS antwortet auch ohne). Ältere Aufrufer (Feld = 0) bleiben kompatibel.
 
+### CTERM ausgehend (Stand 24.10.2026)
+* Schritt 1 des Terminal-Zusatzpakets: portabler CTERM-Client
+  `src/cterm/cterm.c` (Objekt 42), Test unter Linux mit
+  `dntool [-v|-vv] login NODE` (Rohmodus-Terminal, Ctrl-] beendet).
+  Vorlage: dnprogs `dnlogin` (cterm.c, tty.c, found.c).
+* Zwei Schichten: **Foundation** (BIND vom Host → BIND-ACCEPT, UNBIND,
+  ENTER-MODE → NO-MODE, COMMON-DATA mit beliebig vielen CTERM-Nachrichten,
+  je 2 Byte Länge LE) und **CTERM** (INITIATE-Austausch, START-READ, WRITE,
+  READ-/CHARACTERISTICS, OOB, UNREAD, CHECK-INPUT).
+* CTERM ist kein Zeichenstrom: VMS schickt START-READ mit Prompt,
+  Terminatormenge, Echo-/Editier-/Großschreib-Flags, Maximallänge und
+  Timeout; der Client editiert die Zeile lokal und schickt READ-DATA erst
+  beim Terminator (Daten ab Offset 8, Terminatorposition in Byte 6–7).
+  Cursortasten ohne lokale Bedeutung (z. B. Pfeil hoch) gehen als
+  „valid escape“ an den Host, DCL holt dann selbst den Befehl zurück.
+  ^C/^Y/^O kommen als OOB (Zeichenattribute per CHARACTERISTICS 0x202).
+* Abweichungen von dnlogin: WRITE-Daten beginnen bei Offset **5** (Typ,
+  Flags 2, Präfix, Postfix — bestätigt durch dnprogs `ctermd.c`), dnlogin
+  gab das Postfix-Byte mit aus; Terminaltyp in CHARACTERISTICS ist ein
+  Zähl-String (Länge im ersten Byte, nicht `buf[0]`); NUL-Füllzeichen von
+  VMS werden nicht ausgegeben.
+* Getestet 24.10.: HOWIE (OpenVMS 7.2) komplette Sitzung (Login ohne
+  Passwort-Echo, DCL, Recall, ^C/^Y, LOGOUT → UNBIND), EUGENE (VMS 5.5-2)
+  bis `Username:` — gleiche Aushandlung. Mitschnitte
+  `captures/2026-10-24-cterm-*.pcap`. Das Modul übersetzt für den 68000
+  (≈ 6 KB) und wird so in `dnterm.device` übernommen.
+
 ## Verzeichnisaufbau
 
 ```
@@ -470,6 +497,7 @@ src/core/      routing.c nsp.c session.c timer.c buf.c   (portabel)
 src/amiga/     dnetd.c sana2.c library/ (decnet.library)
 src/linux/     dnhost.c (AF_PACKET + pcap-Replay)
 src/apps/      dncopy dndir fotofix
+src/cterm/     CTERM-Client (portabel, dntool login / dnterm.device)
 src/handler/   DN-Handler
 tests/         Kern-Tests, pcap-Fälle
 tools/         Amiberry-IPC, Typ-Helfer (vorhanden)

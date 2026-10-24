@@ -7,6 +7,8 @@
  *               put NODE LOCALFILE [SPEC]
  *               nodes NODE [permanent]
  *               task NODE NAME
+ *               login NODE
+ *   login is a CTERM terminal session (like SET HOST); Ctrl-] ends it
  *   task connects to the named object (on VMS: runs NAME.COM in the login
  *   directory) and prints every message until the other end disconnects
  *   -n  do not offer DAP blocking (needed for FOTOFX)
@@ -23,12 +25,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <poll.h>
+#include <termios.h>
 #include <time.h>
 #include <unistd.h>
 
 #include "dnenv.h"
 #include "../dap/dap.h"
 #include "../nml/nml.h"
+#include "../cterm/cterm.h"
 
 static const struct { const char *name; const char *addr; } nodes[] = {
 	{ "EUGENE", "23.21" }, { "HOWIE", "23.208" }, { "COLT", "23.209" },
@@ -169,6 +174,104 @@ static int do_task(dn_u16 node, const char *name, const char *user, const char *
 	return 0;
 }
 
+static double now(void);
+
+/* login NODE: CTERM session on the terminal */
+static int cterm_net_write(void *ctx, const unsigned char *buf, long n)
+{
+	return dns_write(ctx, buf, n);
+}
+
+static void cterm_term_write(void *ctx, const char *buf, long n)
+{
+	(void)ctx;
+	if (write(1, buf, n) < 0)
+		return;
+}
+
+static void cterm_log(void *ctx, const char *msg)
+{
+	(void)ctx;
+	fprintf(stderr, "[%s]\r\n", msg);
+}
+
+static int do_login(dn_u16 node, int verbose)
+{
+	struct dn_connreq req;
+	struct termios old, raw;
+	struct cterm c;
+	unsigned char buf[2048];
+	struct dns *s;
+	int reason, tty = isatty(0), rc = 0;
+	long n;
+
+	memset(&req, 0, sizeof req);
+	req.node = node;
+	req.objnum = CTERM_OBJECT;
+	req.srcname = "DNTOOL";
+	s = dns_connect(&req, 30000, &reason);
+	if (!s) {
+		fprintf(stderr, "connect to %s failed: %s (%d)\n", dn_ntoa(node),
+		        dap_reason_text(reason), reason);
+		return 1;
+	}
+	memset(&c, 0, sizeof c);
+	c.net_write = cterm_net_write;
+	c.term_write = cterm_term_write;
+	c.log = cterm_log;
+	c.ctx = s;
+	c.verbose = verbose;
+	strcpy(c.revision, "dntool");
+	cterm_init(&c);
+
+	if (tty) {
+		tcgetattr(0, &old);
+		raw = old;
+		raw.c_iflag &= ~(BRKINT | INLCR | ICRNL | IXON);
+		raw.c_iflag |= IGNBRK;
+		raw.c_oflag &= ~OPOST;
+		raw.c_lflag &= ~(ICANON | ISIG | ECHO | ECHONL | IEXTEN);
+		raw.c_cc[VMIN] = 1;
+		raw.c_cc[VTIME] = 0;
+		tcsetattr(0, TCSANOW, &raw);
+		fprintf(stderr, "Connected to %s. Escape character is '^]'.\r\n", dn_ntoa(node));
+	}
+	for (;;) {
+		struct pollfd pfd = { 0, POLLIN, 0 };
+		double t = now();
+
+		dnenv_pump(20);
+		while ((n = dns_read(s, buf, sizeof buf, 0)) > 0)
+			if (cterm_net(&c, buf, n) < 0)
+				break;
+		if (n < 0 || c.unbound) {
+			if (!c.unbound)
+				rc = 1;
+			break;
+		}
+		if (poll(&pfd, 1, 0) > 0) {
+			char kb[256];
+			long k = read(0, kb, sizeof kb), i;
+			if (k <= 0)
+				break;
+			for (i = 0; i < k && kb[i] != 0x1d; i++)
+				;
+			cterm_keys(&c, kb, i);
+			if (i < k)
+				break;  /* Ctrl-] */
+		}
+		cterm_tick(&c, (long)((now() - t) * 1000));
+		if (dnenv_stopped())
+			break;
+	}
+	if (tty)
+		tcsetattr(0, TCSANOW, &old);
+	fprintf(stderr, "\r\n%s\n", c.unbound ? "Session ended by the host." :
+	        rc ? "Link lost." : "Session closed.");
+	dns_close(s);
+	return rc;
+}
+
 static double now(void)
 {
 	struct timespec ts;
@@ -181,7 +284,7 @@ static void usage(const char *prog)
 {
 	fprintf(stderr, "usage: %s [-a area.node] [-i iface] [-v] [-u user] [-p password] [-n]\n"
 	        "          dir NODE SPEC | get NODE SPEC [LOCALFILE] | nodes NODE [permanent]\n"
-	        "          put NODE LOCALFILE [SPEC] | task NODE NAME\n", prog);
+	        "          put NODE LOCALFILE [SPEC] | task NODE NAME | login NODE\n", prog);
 	exit(1);
 }
 
@@ -219,6 +322,13 @@ int main(int argc, char **argv)
 		if (dnenv_open(ifname, addr, verbose))
 			return 1;
 		rc = do_task(node, argv[optind + 2], user, pass);
+		dnenv_close();
+		return rc;
+	}
+	if (!strcmp(cmd, "login")) {
+		if (dnenv_open(ifname, addr, verbose))
+			return 1;
+		rc = do_login(node, verbose);
 		dnenv_close();
 		return rc;
 	}
