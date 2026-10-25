@@ -95,22 +95,40 @@ static int upcase(int c)
 	return c >= 'a' && c <= 'z' ? c - 32 : c;
 }
 
-/* the LAT node (terminal server) is in maint-latnodes */
-BOOL latnode_allowed(const struct mcfg *cfg, const char *node)
+/* the LAT node (terminal server) is in maint-latnodes: entries are
+   NAME (every port of that terminal server) or NAME/PORT, separated
+   by blanks or commas, case does not matter */
+static BOOL sep(char c)
 {
-	const char *p = cfg->latnodes;
-	int i;
+	return c == 0 || c == ' ' || c == ',' || c == '\t';
+}
+
+/* the entry at p starts with name; returns the rest of the
+   entry after it, or NULL */
+static const char *match(const char *p, const char *name)
+{
+	while (*name && upcase(*p) == upcase(*name))
+		p++, name++;
+	return *name ? NULL : p;
+}
+
+BOOL latnode_allowed(const struct mcfg *cfg, const char *node, const char *port)
+{
+	const char *p = cfg->latnodes, *q;
 
 	if (!*node)
 		return FALSE;
 	while (*p) {
-		while (*p == ' ' || *p == ',' || *p == '\t')
+		while (*p && sep(*p))
 			p++;
-		for (i = 0; node[i] && upcase(p[i]) == upcase(node[i]); i++)
-			;
-		if (!node[i] && (p[i] == 0 || p[i] == ' ' || p[i] == ',' || p[i] == '\t'))
-			return TRUE;
-		while (*p && *p != ' ' && *p != ',' && *p != '\t')
+		if (!*p)
+			break;
+		q = match(p, node);
+		if (q && sep(*q))
+			return TRUE;            /* NAME: any port */
+		if (q && *q == '/' && (q = match(q + 1, port)) != NULL && sep(*q) && *port)
+			return TRUE;            /* NAME/PORT */
+		while (!sep(*p))
 			p++;
 	}
 	return FALSE;
@@ -259,7 +277,7 @@ int main(void)
 			if (lid < 0) {
 				offer = 0;              /* latd has stopped */
 			} else if (lid > 0) {
-				ok = cfg.password[0] && latnode_allowed(&cfg, lnode);
+				ok = cfg.password[0] && latnode_allowed(&cfg, lnode, lport);
 				mlog("dnmaint: LAT connect from %s/%s %s\n", (STRPTR)lnode,
 				     (STRPTR)lport, ok ? "accepted" : "refused");
 				if (!ok) {

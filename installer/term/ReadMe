@@ -214,6 +214,11 @@ and on a terminal server its connect command for that service. Terminal
 servers not in the list are refused before anything is asked. The
 same password is asked, and the session works as over CTERM.
 
+A terminal server many people use (a web terminal, say) can be
+narrowed to one of its ports: NAME/PORT, e.g. TSERV2/PORT_5, lets only
+that port in. T:dnmaint.log shows node and port of every connect, also
+of refused ones, so you can look them up there.
+
 LAT has no addresses: anyone on your LAN can give a terminal server
 any name, so the list keeps chance visitors out, not someone who sets
 out to get in; the password does that. All terminal servers that see

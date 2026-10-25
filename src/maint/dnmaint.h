@@ -12,8 +12,8 @@
  * Configuration (read from ENV: only, see the installer):
  *   ENV:DECnet/maint-node      the only node allowed (area.node, or a
  *                              name from ENV:DECnet/nodes)
- *   ENV:DECnet/maint-latnodes  LAT node names allowed (blank or comma
- *                              separated); none: no LAT
+ *   ENV:DECnet/maint-latnodes  LAT node names allowed, NAME or NAME/PORT
+ *                              (blank or comma separated); none: no LAT
  *   ENV:DECnet/maint-password  password asked after connect
  *
  * Copyright (C) 2026  Torsten Bülck (tuti)
@@ -101,7 +101,7 @@ struct msession {
 void mlog(const char *fmt, ...);
 int  cfg_load(struct mcfg *cfg);
 BOOL node_allowed(const struct mcfg *cfg, UWORD node);
-BOOL latnode_allowed(const struct mcfg *cfg, const char *node);
+BOOL latnode_allowed(const struct mcfg *cfg, const char *node, const char *port);
 
 /* session.c: CTERM over the link, or LAT through latd */
 int  session_init(struct msession *s, struct mcfg *cfg, struct DnLink *l);

@@ -108,20 +108,24 @@
 			(prompt "Also over LAT from which terminal servers?\n\n"
 			        "LAT node names of the terminal servers (or VMS nodes, "
 			        "SET HOST/LAT) allowed to use the maintenance login, "
-			        "separated by blanks. Leave it empty for no LAT.")
+			        "separated by blanks; NAME/PORT allows only that port of "
+			        "it. Leave it empty for no LAT.")
 			(help "The login is then offered as LAT service named like this "
 			      "Amiga (ENV:DECnet/Name). Only the nodes you name here get the "
-			      "password prompt.\n\n"
+			      "password prompt. A terminal server used by many people "
+			      "(a web terminal) can be narrowed to your port: NAME/PORT, "
+			      "as the Amiga's log T:dnmaint.log shows it for a refused "
+			      "connect.\n\n"
 			      "LAT knows no addresses: a node name can be forged by anyone "
 			      "on your LAN, and the password crosses it in clear text.\n\n"
 			      @askstring-help)
 			(default #lat)
 		))
 		; letters, digits and $ _ . - in names, blanks or commas between
-		(if (OR (= #lat "") (patmatch "#[-A-Za-z0-9$_., ]" #lat))
+		(if (OR (= #lat "") (patmatch "#[-A-Za-z0-9$_.,/ ]" #lat))
 			(set #lat-ok 1)
 			(message "\"" #lat "\" is not a list of LAT node names (letters, "
-			         "digits, $ _ . -, separated by blanks).")
+			         "digits, $ _ . -, NAME/PORT, separated by blanks).")
 		)
 	)
 
