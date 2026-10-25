@@ -1,23 +1,26 @@
-; $VER: Install-DECnet-Term 0.3 (24.10.2026)
+; $VER: Install-DECnet-Term 0.4 (25.10.2026)
 ;
-; Installer script for DECnet-Term, the CTERM add-on of the Amiga DECnet
-; endnode: dnterm.device (terminal sessions to other nodes) and, if the
-; user enables it, the maintenance login (one other node may log in to an
-; Amiga Shell). Needs DECnet (LIBS:decnet.library) and AmigaOS 2.04.
+; Installer script for DECnet-Term, the terminal add-on of the Amiga
+; DECnet endnode: dnterm.device (CTERM and LAT terminal sessions to other
+; nodes) and, if the user enables it, the maintenance login (one other
+; node may log in to an Amiga Shell). Needs DECnet (LIBS:decnet.library)
+; and AmigaOS 2.04; LAT needs dnetd 0.7.
 ;
 ; Installs:
 ;   DEVS:dnterm.device
 ;   DECnet:C/dntermpatch          makes a copy of a program use dnterm.device
+;   DECnet:C/latd                 LAT sessions (dnterm.device units 4-7)
+;   DECnet:S/DECnet-Start-Term    started by DECnet-Start (latd, dnmaint)
+;   DECnet:S/DECnet-Stop-Term     run by DECnet-Stop
 ; and with the maintenance login:
 ;   DECnet:C/dnmaint              the maintenance login service
-;   DECnet:S/DECnet-Start-Term    started by DECnet-Start
 ;   ENVARC:DECnet/maint-node      the node allowed to log in
 ;   ENVARC:DECnet/maint-password  its password (plain text)
 ;
 ; Copyright (C) 2026  Torsten Bülck (tuti)
 ; SPDX-License-Identifier: GPL-2.0-or-later
 
-(set #version "0.3")
+(set #version "0.4")
 (set @app-name "DECnet-Term")
 
 (if (< (/ (getversion) 65536) 37)
@@ -56,7 +59,6 @@
 		(run "DECnet:C/dnmaint >NIL: STOP")
 	)
 	(delete "DECnet:C/dnmaint" (optional "force") (prompt "") (help ""))
-	(delete "DECnet:S/DECnet-Start-Term" (optional "force") (prompt "") (help ""))
 	(delete "ENVARC:DECnet/maint-node" (optional "force") (prompt "") (help ""))
 	(delete "ENVARC:DECnet/maint-password" (optional "force") (prompt "") (help ""))
 	(delete "ENV:DECnet/maint-node" (optional "force") (prompt "") (help ""))
@@ -119,12 +121,6 @@
 		(source "C/dnmaint")
 		(dest "DECnet:C")
 	)
-	(copyfiles
-		(prompt "Copying DECnet-Start-Term to DECnet:S")
-		(help @copyfiles-help)
-		(source "S/DECnet-Start-Term")
-		(dest "DECnet:S")
-	)
 	(makedir "ENVARC:DECnet" (prompt "") (help ""))
 	(makedir "ENV:DECnet" (prompt "") (help ""))
 	(set #var "maint-node") (set #val #addr) (P_SAVEVAR)
@@ -143,7 +139,7 @@
 			(default 1))
 			(
 				(run "DECnet:C/dnmaint >NIL: STOP")
-				(execute "DECnet:S/DECnet-Start-Term")
+				(run "Run >NIL: DECnet:C/dnmaint LOG=T:dnmaint.log")
 			)
 		)
 	)
@@ -186,6 +182,26 @@
 	)
 )
 
+; ---------------------------------------------------------------- LAT
+
+; latd needs dnetd 0.7 (it passes the LAT frames); start the new latd now
+(procedure P_LAT
+	(if (< (getversion "DECnet:C/dnetd") 7)
+		(set #lat-text (cat "\n\nLAT (units 4 to 7) needs DECnet with dnetd 0.7 "
+		                    "or newer. Update DECnet (Install-DECnet), then "
+		                    "restart DECnet or the Amiga."))
+		(
+			(set #lat-text "")
+			(if (= 0 (run "DECnet:C/dnetd >NIL: CHECK"))
+				(
+					(run "DECnet:C/latd >NIL: STOP")
+					(run "Run >NIL: DECnet:C/latd LOG=T:latd.log")
+				)
+			)
+		)
+	)
+)
+
 ; ---------------------------------------------------------------- remove
 
 (procedure P_REMOVE
@@ -195,8 +211,8 @@
 	)
 	(if (askbool
 		(prompt "Remove DECnet-Term?\n\n"
-		        "This deletes DEVS:dnterm.device and switches the maintenance "
-		        "login off. Close your terminal program first.")
+		        "This deletes DEVS:dnterm.device and latd, and switches the "
+		        "maintenance login off. Close your terminal program first.")
 		(help "Answer \"Remove\" to delete DECnet-Term from this Amiga.")
 		(choices "Remove" "Cancel")
 		(default 0))
@@ -204,7 +220,13 @@
 			(delete "DEVS:dnterm.device" (optional "force") (prompt "") (help ""))
 			(if (<> (getassign "DECnet") "")
 				(
+					(if (exists "DECnet:C/latd")
+						(run "DECnet:C/latd >NIL: STOP")
+					)
 					(delete "DECnet:C/dntermpatch" (optional "force") (prompt "") (help ""))
+					(delete "DECnet:C/latd" (optional "force") (prompt "") (help ""))
+					(delete "DECnet:S/DECnet-Start-Term" (optional "force") (prompt "") (help ""))
+					(delete "DECnet:S/DECnet-Stop-Term" (optional "force") (prompt "") (help ""))
 					(P_MAINT_OFF)
 				)
 			)
@@ -231,23 +253,34 @@
 	)
 	; the commands go to the DECnet commands, which are in the Shell path
 	(set #maint-text "")
+	(set #lat-text "")
 	(if (<> (getassign "DECnet") "")
 		(
 			(copyfiles
-				(prompt "Copying dntermpatch to DECnet:C")
+				(prompt "Copying dntermpatch and latd to DECnet:C")
 				(help @copyfiles-help)
-				(source "C/dntermpatch")
+				(source "C")
 				(dest "DECnet:C")
+				(choices "dntermpatch" "latd")
+			)
+			(copyfiles
+				(prompt "Copying DECnet-Start-Term and DECnet-Stop-Term to DECnet:S")
+				(help @copyfiles-help)
+				(source "S")
+				(dest "DECnet:S")
+				(choices "DECnet-Start-Term" "DECnet-Stop-Term")
 			)
 			(P_MAINT)
+			(P_LAT)
 		)
-		(set #maint-text "\n\nThe maintenance login needs the DECnet: assign "
-		                 "(DECnet started); it was not set up.")
+		(set #maint-text "\n\nLAT and the maintenance login need the DECnet: "
+		                 "assign (DECnet started); they were not set up.")
 	)
 	(exit "DECnet-Term " #version " is installed (dnterm.device in DEVS:).\n\n"
-	      "In your terminal program choose dnterm.device, unit 0, instead of "
-	      "serial.device. Then type ATD and the name or address of a node, "
-	      "for example ATD 1.10. Read the ReadMe for more." #maint-text (quiet))
+	      "In your terminal program choose dnterm.device instead of "
+	      "serial.device: unit 0 for CTERM, then type ATD and a node "
+	      "(ATD 1.10); unit 4 for LAT, then type ATD and a LAT service. "
+	      "Read the ReadMe for more." #maint-text #lat-text (quiet))
 )
 
 ; ---------------------------------------------------------------- main

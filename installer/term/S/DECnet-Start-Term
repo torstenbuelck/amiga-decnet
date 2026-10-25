@@ -1,9 +1,13 @@
-; DECnet-Start-Term - starts the maintenance login (dnmaint) of
-; DECnet-Term. Install-DECnet-Term puts it here when the maintenance
-; login is enabled; DECnet-Start runs it after dnetd.
-; Settings: ENV:DECnet/maint-node, ENV:DECnet/maint-password
-; Log: T:dnmaint.log. Stop it with: dnmaint STOP
+; DECnet-Start-Term - starts the services of DECnet-Term after dnetd:
+; latd (LAT sessions, dnterm.device units 4 to 7) and, when enabled,
+; the maintenance login (dnmaint). DECnet-Start runs it; DECnet-Stop
+; runs DECnet-Stop-Term.
+; Maintenance login settings: ENV:DECnet/maint-node, maint-password
+; Logs: T:latd.log, T:dnmaint.log
+; (a second latd or dnmaint ends at once: "already running")
+If EXISTS DECnet:C/latd
+  Run >NIL: latd LOG=T:latd.log
+EndIf
 If EXISTS ENV:DECnet/maint-password
-  ; a second one ends at once ("already running")
   Run >NIL: dnmaint LOG=T:dnmaint.log
 EndIf

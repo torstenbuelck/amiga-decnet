@@ -377,16 +377,27 @@
 		)
 	)
 
-	; ---- start now, copy node names
+	; ---- start now (an update restarts the running dnetd, which would
+	; otherwise go on with the old version until the next reboot), copy
+	; node names
 	(makeassign "DECnet" #target)
+	(set #running (= 0 (run "DECnet:C/dnetd >NIL: CHECK")))
 	(if (askbool
-		(prompt "Start DECnet now?\n\n"
-		        "If TCP/IP software is running already, DECnet may only work after "
-		        "the next reboot.")
-		(help "Runs DECnet:S/DECnet-Start: mounts DN: and starts dnetd.")
-		(choices "Start" "Later")
+		(prompt (if #running
+		            (cat "Restart DECnet now?\n\n"
+		                 "DECnet is running with the old version. Restart it to use "
+		                 "the new one; open links are closed.")
+		            (cat "Start DECnet now?\n\n"
+		                 "If TCP/IP software is running already, DECnet may only "
+		                 "work after the next reboot.")))
+		(help "Runs DECnet:S/DECnet-Start: mounts DN: and starts dnetd (after "
+		      "DECnet:S/DECnet-Stop if it runs already).")
+		(choices (if #running "Restart" "Start") "Later")
 		(default 0))
 		(
+			(if #running
+				(execute "DECnet:S/DECnet-Stop")
+			)
 			(execute "DECnet:S/DECnet-Start")
 			(set #from (askstring
 				(prompt "Copy node names from another DECnet node?\n\n"

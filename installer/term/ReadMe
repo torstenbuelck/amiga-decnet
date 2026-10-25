@@ -3,8 +3,9 @@ DECnet-Term for the Amiga
 
 dnterm.device lets an Amiga terminal program log in to VAX/VMS and
 other DECnet hosts over the network, with CTERM (the protocol behind
-VMS "SET HOST"). The terminal program sees a modem on a serial port:
-it dials a node name instead of a phone number.
+VMS "SET HOST") or LAT (the protocol of DEC terminal servers). The
+terminal program sees a modem on a serial port: it dials a node name
+or a LAT service instead of a phone number.
 
 The other way round, the optional maintenance login lets one other
 DECnet node log in to an Amiga Shell on this Amiga (see "Maintenance
@@ -17,14 +18,18 @@ Requirements
   dnetd)
 - a terminal program that can use another device than serial.device,
   e.g. Term or NComm
-- on the host: a CTERM server (VMS has one built in)
+- on the host: a CTERM server (VMS has one built in), or for LAT a LAT
+  service (VMS with LAT started, terminal servers)
+- for LAT: DECnet with dnetd 0.7 or newer
 
 
 Installation
 ------------
-Double-click "Install-DECnet-Term". It copies dnterm.device to DEVS:
-and the command dntermpatch to DECnet:C, and asks whether to enable
-the maintenance login.
+Double-click "Install-DECnet-Term". It copies dnterm.device to DEVS:,
+the commands dntermpatch and latd to DECnet:C and the scripts
+DECnet-Start-Term and DECnet-Stop-Term to DECnet:S, and asks whether to
+enable the maintenance login. LAT needs DECnet with dnetd 0.7 or newer:
+update DECnet first if yours is older.
 From the Shell: cd to this drawer, then
 
   Installer Install-DECnet-Term
@@ -50,6 +55,37 @@ ATDP in front of it are fine.
 
 Units 0 to 3 are separate lines: to keep two sessions open at the same
 time, start a second terminal program on unit 1.
+
+
+LAT
+---
+Units 4 to 7 of dnterm.device reach LAT services instead of DECnet
+nodes. Choose unit 4 in the terminal program, then dial the service:
+
+  ATD VAX1        log in to the LAT service VAX1
+
+VMS systems with LAT offer a service named after the node; terminal
+servers and other systems offer theirs under other names. To see the
+services on your network, type in a Shell:
+
+  latd LIST
+
+latd runs from the start of DECnet on (DECnet:S/DECnet-Start-Term) and
+listens to the service announcements. Right after the start of DECnet
+some services are not known yet: nodes announce them only every 30
+to 60 seconds. A dial waits up to 30 seconds for the service.
+
+"Unknown LAT service" means that no node offers that name. Units 4 to
+7 are separate lines like units 0 to 3; sessions to the same node share
+one LAT circuit. VMS shows the line as "LAT Server/Port: MYAMI/LAT4"
+(your node name from ENV:DECnet/Name, here MYAMI, and the unit). A BREAK of the
+terminal program is sent to the host.
+
+LAT, like CTERM, does not encrypt: everything you type, passwords
+included, can be read by anyone who watches the network.
+
+latd writes to T:latd.log. "latd STOP" ends it until DECnet starts
+again; DECnet-Stop stops it first, so that open sessions end properly.
 
 
 Term
@@ -180,15 +216,16 @@ Tested
 ------
 Term 4.8 and VAXterm 2.4 on AmigaOS 3.1 (Amiberry), with OpenVMS 7.2
 hosts: login, DCL, EVE and MONITOR. dnterm.device also on AmigaOS 2.04
-with a 68000. The maintenance login on AmigaOS 3.9 (Amiberry),
-from OpenVMS 7.2 (SET HOST) and from Linux (dntool login). Reports with other terminal programs and hosts
-are welcome.
+with a 68000. LAT on AmigaOS 3.5 (Amiberry) with OpenVMS 7.2. The
+maintenance login on AmigaOS 2.04 and 3.5 (Amiberry) and on an A3000
+with AmigaOS 3.5, from OpenVMS 7.2 (SET HOST) and from Linux (dntool
+login). Reports with other terminal programs and hosts are welcome.
 
 
 Licence
 -------
 GNU General Public License, version 2 or later. The CTERM messages
-follow dnprogs' dnlogin.
+follow dnprogs' dnlogin, the LAT messages latd by Christine Caulfield.
 
 Copyright (C) 2026  Torsten Bülck (tuti)
 https://forum.classic-computing.de

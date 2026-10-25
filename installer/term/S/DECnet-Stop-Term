@@ -1,0 +1,8 @@
+; DECnet-Stop-Term - stops the services of DECnet-Term before dnetd,
+; so that open LAT sessions are ended properly. DECnet-Stop runs it.
+If EXISTS DECnet:C/latd
+  latd >NIL: STOP
+EndIf
+If EXISTS DECnet:C/dnmaint
+  dnmaint >NIL: STOP
+EndIf

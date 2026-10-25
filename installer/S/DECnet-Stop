@@ -5,4 +5,8 @@ Which >NIL: dnetd
 If WARN
   Path DECnet:C ADD
 EndIf
+; add-ons first (DECnet-Term: LAT sessions, maintenance login)
+If EXISTS DECnet:S/DECnet-Stop-Term
+  Execute DECnet:S/DECnet-Stop-Term
+EndIf
 dnetd STOP

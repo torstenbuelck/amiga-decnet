@@ -20,6 +20,7 @@ make -C "$DIR/src/apps" >/dev/null
 make -C "$DIR/src/handler" >/dev/null
 make -C "$DIR/src/term" >/dev/null
 make -C "$DIR/src/maint" >/dev/null
+make -C "$DIR/src/lat" latd >/dev/null
 
 rm -rf "$OUT"
 mkdir -p "$PKG"/{C,L,S,Libs,Storage,Icons}
@@ -42,8 +43,8 @@ TPKG="$OUT/DECnet-Term"
 mkdir -p "$TPKG/Devs" "$TPKG/C" "$TPKG/S"
 cp "$DIR/installer/term/Install-DECnet-Term" "$DIR/installer/term/ReadMe" "$TPKG/"
 cp "$DIR/src/term/dnterm.device" "$TPKG/Devs/"
-cp "$DIR/src/term/dntermpatch" "$DIR/src/maint/dnmaint" "$TPKG/C/"
-cp "$DIR/installer/term/S/DECnet-Start-Term" "$TPKG/S/"
+cp "$DIR/src/term/dntermpatch" "$DIR/src/maint/dnmaint" "$DIR/src/lat/latd" "$TPKG/C/"
+cp "$DIR"/installer/term/S/{DECnet-Start-Term,DECnet-Stop-Term} "$TPKG/S/"
 cp "$ICONS/DECnet-Term.info" "$OUT/"
 cp "$ICONS"/{Install-DECnet-Term,ReadMe}.info "$TPKG/"
 rm -r "$ICONS"
