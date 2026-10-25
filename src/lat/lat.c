@@ -10,6 +10,12 @@
  * The low nibble of a slot command grants credits: the number of data
  * slots the other side may send on that session.
  *
+ * As host (lat_offer) the roles turn round: a terminal server opens the
+ * circuit (start, we acknowledge), sends the run messages and starts the
+ * sessions with start slots; we answer every run message (empty, 0x00)
+ * and send our output in messages that ask for an answer (0x01), one at
+ * a time. The service is announced every LAT_ANNOUNCE_S seconds.
+ *
  * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
@@ -50,6 +56,9 @@
 #define S_STARTING      2       /* start slot sent, no answer yet */
 #define S_RUN           3
 #define S_STOP          4       /* stop slot to send */
+#define S_OFFERED       5       /* host: waits for lat_answer */
+#define S_ACCEPT        6       /* host: start slot (accept) to send */
+#define S_REJECT        7       /* host: reject slot to send */
 
 /* circuit states */
 #define C_FREE          0
@@ -62,14 +71,19 @@ struct sess {
 	int credit;                     /* data slots we may send */
 	int rcredit;                    /* data slots the node may send */
 	int brk;                        /* BREAK to send */
+	unsigned maxdata;               /* data slot size the other side takes */
 	unsigned char tx[LAT_TXBUF];
 	unsigned txlen;
 	char service[LAT_NAMELEN + 1];
 	char port[LAT_NAMELEN + 1];
+	int reason;                     /* S_REJECT */
 };
 
 struct circ {
 	int state;
+	int host;                       /* we are the host (slave) on it */
+	int had_session;                /* host: a session was started */
+	unsigned long rx_idle;          /* host: ms since the node last sent */
 	unsigned char mac[6];
 	char node[LAT_NAMELEN + 1];
 	unsigned lid, rid;              /* circuit ids: ours, the node's */
@@ -95,6 +109,14 @@ static struct lat_env env;
 static struct svc svcs[LAT_MAXSVC];
 static struct circ circs[LAT_MAXCIRC];
 static unsigned next_lid;
+
+/* host role */
+static int offering;
+static char offer_name[LAT_NAMELEN + 1];
+static char offer_ident[64];
+static unsigned long announce_ms;
+static unsigned char incarnation;
+static const unsigned char lat_multicast[6] = { 0x09, 0x00, 0x2b, 0x00, 0x00, 0x0f };
 
 static void logf_(int level, const char *fmt, ...)
 {
@@ -389,10 +411,39 @@ static void circ_pump(struct circ *c, int force)
 	if (c->state != C_RUN || c->need_ack)
 		return;
 	memset(m, 0, 8);
-	m[0] = M_RUN | TO_HOST;
+	m[0] = c->host ? M_RUN : M_RUN | TO_HOST;
 	for (i = 0; i < LAT_MAXSESS && p < MAXMSG - 300; i++) {
 		s = &c->s[i];
 		switch (s->state) {
+		case S_ACCEPT: {
+			/* host: our start slot answers the terminal server's */
+			unsigned char b[40];
+			unsigned q = 0;
+
+			b[q++] = 1;             /* service class */
+			b[q++] = 1;             /* attention slot size */
+			b[q++] = 0xfe;          /* data slot size */
+			b[q++] = 0;             /* no service, no port name */
+			b[q++] = 0;
+			b[q++] = 1;             /* parameter 1, 2 bytes: 1024 */
+			b[q++] = 2;
+			b[q++] = 4;
+			b[q++] = 0;
+			b[q++] = 4;             /* parameter 4: our port name */
+			q = put_ascic(b, q, offer_name);
+			b[q++] = 0;
+			s->rcredit = MAX_CREDIT;
+			p = add_slot(m, p, s->rid, (unsigned char)(i + 1), SL_START | MAX_CREDIT, b, q);
+			s->state = S_RUN;
+			any = 1;
+			break;
+		}
+		case S_REJECT:
+			p = add_slot(m, p, s->rid, 0, (unsigned char)(SL_REJECT | (s->reason & 15)),
+			             NULL, 0);
+			s->state = S_FREE;
+			any = 1;
+			break;
 		case S_WAIT: {
 			unsigned char b[60];
 			unsigned q = 0;
@@ -425,7 +476,7 @@ static void circ_pump(struct circ *c, int force)
 				any = 1;
 			}
 			if (s->txlen && s->credit > 0) {
-				n = s->txlen < 255 ? s->txlen : 255;
+				n = s->txlen < s->maxdata ? s->txlen : s->maxdata;
 				p = add_slot(m, p, s->rid, (unsigned char)(i + 1),
 				             (unsigned char)(SL_DATA | grant(s)), s->tx, n);
 				memmove(s->tx, s->tx + n, s->txlen - n);
@@ -449,13 +500,17 @@ static void circ_pump(struct circ *c, int force)
 	}
 	if (!any && !force && !c->reply_due)
 		return;
+	if (c->host && any)
+		m[0] |= 1;                      /* answer this one */
 	put16(m + 2, c->rid);
 	put16(m + 4, c->lid);
 	m[6] = ++c->seq;
 	m[7] = c->rseq;
 	memcpy(c->last, m, p);
 	c->lastlen = p;
-	c->need_ack = 1;
+	/* the master needs an answer to each message, the host only to
+	   those that carry slots */
+	c->need_ack = !c->host || any;
 	c->reply_due = 0;
 	c->timer = 0;
 	c->idle = 0;
@@ -484,6 +539,51 @@ static struct circ *find_circ(const unsigned char *src, unsigned lid)
 	return NULL;
 }
 
+/* host: a terminal server starts a session (start slot to slot 0):
+   service class, slot sizes, service, source port, parameters */
+static void host_session(struct circ *c, const unsigned char *b, unsigned n,
+                         unsigned char rid, unsigned credits)
+{
+	char service[LAT_NAMELEN + 1], port[LAT_NAMELEN + 1], skip[LAT_NAMELEN + 1];
+	unsigned q = 3, type, l;
+	struct sess *s;
+	int i;
+
+	port[0] = 0;
+	q = get_ascic(b, q, n, service, sizeof service);
+	q = get_ascic(b, q, n, skip, sizeof skip);
+	while (q + 1 < n && (type = b[q]) != 0) {
+		l = b[q + 1];
+		if (type == 5)
+			get_ascic(b, q + 1, n, port, sizeof port);
+		q += 2 + l;
+	}
+	for (i = 0; i < LAT_MAXSESS && c->s[i].state != S_FREE; i++)
+		;
+	if (i == LAT_MAXSESS)
+		return;                         /* nothing to answer with */
+	s = &c->s[i];
+	memset(s, 0, sizeof *s);
+	s->rid = rid;
+	if (!offering || !name_eq(service, offer_name)) {
+		logf_(1, "%s asks for service %s: not ours", c->node, service);
+		s->state = S_REJECT;
+		s->reason = LAT_R_NOSVC;
+		return;
+	}
+	s->credit = (int)credits;
+	s->maxdata = n > 2 && b[2] ? b[2] : 0xfe;
+	snprintf(s->service, sizeof s->service, "%s", service);
+	snprintf(s->port, sizeof s->port, "%s", port);
+	c->had_session = 1;
+	logf_(1, "session %d from %s/%s", (int)(c - circs) * LAT_MAXSESS + i, c->node, port);
+	if (env.incoming) {
+		s->state = S_OFFERED;
+		env.incoming(env.ctx, (int)(c - circs) * LAT_MAXSESS + i, c->node, port);
+	} else
+		s->state = S_ACCEPT;
+}
+
 static void do_slots(struct circ *c, const unsigned char *m, unsigned len)
 {
 	unsigned p = 8, i, n, cmd, credits;
@@ -509,9 +609,14 @@ static void do_slots(struct circ *c, const unsigned char *m, unsigned len)
 			}
 			break;
 		case SL_START:
+			if (c->host && m[p] == 0) {
+				host_session(c, m + p + 4, n, m[p + 1], credits);
+				break;
+			}
 			if (s && s->state == S_STARTING) {
 				s->rid = m[p + 1];
 				s->credit += credits;
+				s->maxdata = n > 2 && m[p + 6] ? m[p + 6] : 0xfe;
 				s->state = S_RUN;
 				logf_(1, "session %d up on %s", (int)(c - circs) * LAT_MAXSESS + si, c->node);
 				env.event(env.ctx, (int)(c - circs) * LAT_MAXSESS + si, LAT_EV_UP, 0);
@@ -546,8 +651,9 @@ static void do_run(const unsigned char *src, const unsigned char *m, unsigned le
 	if (len < 8)
 		return;
 	c = find_circ(src, get16(m + 2));
-	if (!c || c->state != C_RUN)
+	if (!c || c->state != C_RUN || c->host != ((m[0] & TO_HOST) != 0))
 		return;
+	c->rx_idle = 0;
 	if (m[6] == c->rseq) {
 		/* the node did not see our answer: send it again */
 		logf_(2, "duplicate seq %u from %s", m[6], c->node);
@@ -562,6 +668,13 @@ static void do_run(const unsigned char *src, const unsigned char *m, unsigned le
 		resend_last(c);
 	}
 	do_slots(c, m, len);
+	if (c->host) {
+		/* the terminal server ends the circuit itself; answer
+		   every message */
+		c->reply_due = 1;
+		circ_pump(c, 0);
+		return;
+	}
 	if (!sessions_left(c)) {
 		/* the last session is over: end the circuit now. Answering
 		   instead would go on for ever, as VMS keeps asking for
@@ -573,6 +686,86 @@ static void do_run(const unsigned char *src, const unsigned char *m, unsigned le
 	if ((m[0] & 1) || m[1])
 		c->reply_due = 1;
 	circ_pump(c, 0);
+}
+
+/* host: start message of a terminal server: header, parameters, our
+   node name, its node name, its description */
+static void send_start_ack(struct circ *c)
+{
+	unsigned char m[200];
+	unsigned p = 8;
+
+	memset(m, 0, sizeof m);
+	m[0] = M_START;
+	put16(m + 2, c->rid);
+	put16(m + 4, c->lid);
+	m[6] = c->seq;
+	m[7] = c->rseq;
+	put16(m + p, MAXMSG);
+	p += 2;
+	m[p++] = 5;
+	m[p++] = 2;
+	m[p++] = LAT_MAXSESS;
+	m[p++] = 0;
+	m[p++] = CIRC_TIMER;
+	m[p++] = KEEPALIVE;
+	put16(m + p, 0);
+	p += 2;
+	m[p++] = 3;
+	m[p++] = 3;
+	p = put_ascic(m, p, env.node);
+	p = put_ascic(m, p, c->node);
+	p = put_ascic(m, p, env.ident);
+	m[p++] = 0;
+	memcpy(c->last, m, p);
+	c->lastlen = p;
+	c->need_ack = 1;
+	c->timer = 0;
+	c->tries = 0;
+	send_raw(c, m, p);
+}
+
+static void do_host_start(const unsigned char *src, const unsigned char *m, unsigned len)
+{
+	char dest[LAT_NAMELEN + 1], node[LAT_NAMELEN + 1];
+	struct circ *c;
+	unsigned p;
+	int i;
+
+	if (len < 21 || !offering)
+		return;
+	p = get_ascic(m, 20, len, dest, sizeof dest);
+	get_ascic(m, p, len, node, sizeof node);
+	if (!name_eq(dest, env.node))
+		return;
+	for (i = 0; i < LAT_MAXCIRC; i++) {
+		c = &circs[i];
+		if (c->state != C_FREE && c->host && !memcmp(c->mac, src, 6) &&
+		    c->rid == get16(m + 4)) {
+			resend_last(c);         /* our acknowledgement got lost */
+			return;
+		}
+	}
+	for (i = 0; i < LAT_MAXCIRC && circs[i].state != C_FREE; i++)
+		;
+	if (i == LAT_MAXCIRC) {
+		logf_(1, "no free circuit for %s", node);
+		return;
+	}
+	c = &circs[i];
+	memset(c, 0, sizeof *c);
+	c->state = C_RUN;
+	c->host = 1;
+	memcpy(c->mac, src, 6);
+	snprintf(c->node, sizeof c->node, "%s", node);
+	if (++next_lid == 0)
+		next_lid = 1;
+	c->lid = next_lid;
+	c->rid = get16(m + 4);
+	c->rseq = m[6];
+	c->seq = 0;
+	logf_(1, "circuit from %s (%04x/%04x)", c->node, c->lid, c->rid);
+	send_start_ack(c);
 }
 
 static void do_start(const unsigned char *src, const unsigned char *m, unsigned len)
@@ -613,8 +806,21 @@ void lat_input(const unsigned char *src, const unsigned char *dst,
 	(void)dst;
 	if (len < 2 || !memcmp(src, env.mac, 6))
 		return;
-	if (m[0] & TO_HOST)             /* from another terminal server */
+	if (m[0] & TO_HOST) {
+		/* from a terminal server: for us as host */
+		switch (m[0] & 0xfc) {
+		case M_RUN:
+			do_run(src, m, len);
+			break;
+		case M_START:
+			do_host_start(src, m, len);
+			break;
+		case M_STOP:
+			do_stop(src, m, len);
+			break;
+		}
 		return;
+	}
 	switch (m[0] & 0xfc) {
 	case M_RUN:
 		do_run(src, m, len);
@@ -631,6 +837,39 @@ void lat_input(const unsigned char *src, const unsigned char *dst,
 	}
 }
 
+/* host: announce our service (as latd does) */
+static void send_announce(void)
+{
+	unsigned char m[200];
+	unsigned p = 0;
+
+	m[p++] = M_ANNOUNCE;
+	m[p++] = CIRC_TIMER;
+	m[p++] = 5;                     /* protocol versions 5 to 5 */
+	m[p++] = 5;
+	m[p++] = 5;                     /* LAT 5.2 */
+	m[p++] = 2;
+	m[p++] = --incarnation;
+	m[p++] = 0x1f;                  /* change flags */
+	put16(m + p, MAXMSG);
+	p += 2;
+	m[p++] = LAT_ANNOUNCE_S;
+	m[p++] = 2;                     /* accepting connections */
+	m[p++] = 1;                     /* group mask: group 0 */
+	m[p++] = 1;
+	p = put_ascic(m, p, env.node);
+	p = put_ascic(m, p, env.ident);
+	m[p++] = 1;                     /* one service */
+	m[p++] = 100;                   /* rating */
+	p = put_ascic(m, p, offer_name);
+	p = put_ascic(m, p, offer_ident);
+	m[p++] = 1;                     /* node service classes: 1 */
+	m[p++] = 1;
+	m[p++] = 0;
+	m[p++] = 0;
+	env.send_frame(env.ctx, lat_multicast, m, p);
+}
+
 void lat_tick(unsigned ms)
 {
 	struct circ *c;
@@ -639,10 +878,41 @@ void lat_tick(unsigned ms)
 	for (i = 0; i < LAT_MAXSVC; i++)
 		if (svcs[i].used && (svcs[i].s.age_ms += ms) > svcs[i].life_ms)
 			svcs[i].used = 0;
+	if (offering && (announce_ms += ms) >= LAT_ANNOUNCE_S * 1000UL) {
+		announce_ms = 0;
+		send_announce();
+	}
 	for (i = 0; i < LAT_MAXCIRC; i++) {
 		c = &circs[i];
 		c->timer += ms;
 		c->idle += ms;
+		if (c->state == C_RUN && c->host) {
+			c->rx_idle += ms;
+			if (c->need_ack && c->timer >= RETRANS_MS) {
+				if (++c->tries > RETRANS_LIMIT) {
+					logf_(1, "%s does not answer any more", c->node);
+					circuit_down(c, LAT_R_LOST);
+					continue;
+				}
+				resend_last(c);
+			}
+			/* the terminal server keeps the circuit alive (keepalive
+			   20 s here, its own may be longer) */
+			if (c->rx_idle > 3 * 60000UL) {
+				logf_(1, "nothing from %s for 3 minutes", c->node);
+				circuit_down(c, LAT_R_LOST);
+				continue;
+			}
+			/* no session (any more) after a while: end it */
+			if (!sessions_left(c) && !c->need_ack &&
+			    (c->had_session || c->rx_idle > 30000UL)) {
+				send_stop(c, 1);
+				circuit_down(c, LAT_R_USER);
+				continue;
+			}
+			circ_pump(c, 0);
+			continue;
+		}
 		switch (c->state) {
 		case C_START:
 			if (c->timer < START_RETRY_MS)
@@ -704,7 +974,8 @@ int lat_connect(const char *service, const char *port)
 	if (!v)
 		return -LAT_R_NOSVC;
 	for (i = 0; i < LAT_MAXCIRC; i++)
-		if (circs[i].state != C_FREE && !memcmp(circs[i].mac, v->mac, 6)) {
+		if (circs[i].state != C_FREE && !circs[i].host &&
+		    !memcmp(circs[i].mac, v->mac, 6)) {
 			c = &circs[i];
 			break;
 		}
@@ -783,6 +1054,10 @@ void lat_disconnect(int sid)
 		session_down(c, sid % LAT_MAXSESS, LAT_R_USER);
 		return;
 	}
+	if (s->state == S_OFFERED) {
+		lat_answer(sid, 5);
+		return;
+	}
 	s->state = S_STOP;
 	circ_pump(c, 0);
 }
@@ -797,6 +1072,35 @@ void lat_shutdown(void)
 			circuit_down(&circs[i], LAT_R_USER);
 		} else if (circs[i].state == C_START)
 			circuit_down(&circs[i], LAT_R_USER);
+}
+
+void lat_offer(const char *name, const char *ident)
+{
+	if (!name || !*name) {
+		offering = 0;
+		return;
+	}
+	snprintf(offer_name, sizeof offer_name, "%s", name);
+	snprintf(offer_ident, sizeof offer_ident, "%s", ident ? ident : "");
+	offering = 1;
+	announce_ms = 0;
+	send_announce();
+}
+
+int lat_answer(int sid, int reason)
+{
+	struct circ *c;
+	struct sess *s = sess_of(sid, &c);
+
+	if (!s || s->state != S_OFFERED)
+		return -1;
+	if (reason) {
+		s->state = S_REJECT;
+		s->reason = reason;
+	} else
+		s->state = S_ACCEPT;
+	circ_pump(c, 0);
+	return 0;
 }
 
 const char *lat_reason_text(int reason)

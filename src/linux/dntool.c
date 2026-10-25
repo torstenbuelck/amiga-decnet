@@ -498,6 +498,75 @@ static void lat_wait(long ms, const int *flag)
 	}
 }
 
+/* latserve [SERVICE]: offer a LAT service with an echo test loop */
+static int serve_sid = -1;
+
+static void serve_incoming(void *ctx, int sid, const char *node, const char *port)
+{
+	static const char hello[] = "\r\ndntool LAT test host. Typed keys come back; q ends.\r\n";
+
+	(void)ctx;
+	fprintf(stderr, "[incoming session %d from %s/%s]\n", sid, node, port);
+	lat_answer(sid, 0);
+	lat_write(sid, (const unsigned char *)hello, sizeof hello - 1);
+	serve_sid = sid;
+}
+
+static void serve_data(void *ctx, int sid, const unsigned char *buf, unsigned len)
+{
+	unsigned i;
+
+	(void)ctx;
+	for (i = 0; i < len; i++) {
+		if (buf[i] == 'q') {
+			lat_write(sid, (const unsigned char *)"\r\nbye\r\n", 7);
+			lat_disconnect(sid);
+			return;
+		}
+		if (buf[i] == '\r')
+			lat_write(sid, (const unsigned char *)"\r\n", 2);
+		else
+			lat_write(sid, buf + i, 1);
+	}
+}
+
+static void serve_event(void *ctx, int sid, int ev, int reason)
+{
+	(void)ctx;
+	fprintf(stderr, "[session %d %s: %s]\n", sid, ev == LAT_EV_UP ? "up" : "down",
+	        lat_reason_text(reason));
+}
+
+static int do_latserve(const char *service, int verbose)
+{
+	struct lat_env e;
+	double t;
+
+	memset(&e, 0, sizeof e);
+	e.send_frame = lat_send;
+	e.data = serve_data;
+	e.event = serve_event;
+	e.incoming = serve_incoming;
+	e.log = lat_logmsg;
+	e.verbose = verbose;
+	dnenv_mac(e.mac);
+	snprintf(e.node, sizeof e.node, "%s", service);
+	strcpy(e.ident, "dntool LAT test host (Linux)");
+	lat_init(&e, (unsigned)time(NULL));
+	dnenv_other(LAT_ETHERTYPE, lat_input);
+	lat_offer(service, "dntool echo test");
+	fprintf(stderr, "offering LAT service %s, Ctrl-C ends\n", service);
+	t = now();
+	while (!dnenv_stopped()) {
+		dnenv_pump(10);
+		lat_tick((unsigned)((now() - t) * 1000));
+		t = now();
+	}
+	lat_shutdown();
+	lat_wait(300, NULL);
+	return 0;
+}
+
 static int do_lat_list(int verbose, int secs)
 {
 	const struct lat_service *v;
@@ -598,7 +667,7 @@ static void usage(const char *prog)
 	fprintf(stderr, "usage: %s [-a area.node] [-i iface] [-v] [-u user] [-p password] [-n] [-t termtype]\n"
 	        "          dir NODE SPEC | get NODE SPEC [LOCALFILE] | nodes NODE [permanent]\n"
 	        "          put NODE LOCALFILE [SPEC] | task NODE NAME | login NODE | serve\n"
-	        "          lat [SERVICE]\n", prog);
+	        "          lat [SERVICE] | latserve [SERVICE]\n", prog);
 	exit(1);
 }
 
@@ -628,6 +697,13 @@ int main(int argc, char **argv)
 		if (dnenv_open(ifname, addr, verbose))
 			return 1;
 		rc = do_serve(pass, verbose);
+		dnenv_close();
+		return rc;
+	}
+	if (argc - optind >= 1 && !strcmp(argv[optind], "latserve")) {
+		if (dnenv_open(ifname, addr, verbose))
+			return 1;
+		rc = do_latserve(argc - optind > 1 ? argv[optind + 1] : "DNTEST", verbose);
 		dnenv_close();
 		return rc;
 	}

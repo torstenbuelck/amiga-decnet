@@ -14,8 +14,9 @@
  *
  * Gets the LAT frames from dnetd (DNC_TAPOPEN, dnetd 0.7 or later), runs
  * the portable LAT core (lat.c) and serves programs on its public port
- * "LAT" (see latmsg.h), dnterm.device's LAT units above all. Ends with
- * dnetd. Our LAT node name is ENV:DECnet/Name (else AMIGA).
+ * "LAT" (see latmsg.h): dnterm.device's LAT units, and dnmaint, which
+ * offers a service that terminal servers log in to. Ends with dnetd. Our
+ * LAT node name is ENV:DECnet/Name (else AMIGA).
  *
  * Requires AmigaOS 2.04 (V37), runs on a 68000.
  *
@@ -47,6 +48,8 @@ static const char version[] = "$VER: latd 0.1 (25.10.2026)";
 #define RING        8192        /* terminal output not yet read, per client */
 #define MAXCL       (LAT_MAXCIRC * LAT_MAXSESS)
 #define CONNECT_MS  30000UL
+#define ANSWER_MS   30000UL     /* an incoming session waits this long */
+#define MAXQUEUED   2           /* incoming sessions not yet taken */
 
 struct Device *TimerBase;
 
@@ -63,6 +66,9 @@ struct client {
 	ULONG read_deadline;
 	struct DnMsg *pwrite;
 	LONG woff;
+	int incoming;                   /* 1: waits for LTC_ACCEPT, 2: for LTC_ANSWER */
+	ULONG answer_deadline;
+	char node[17], port[17];
 	UBYTE ring[RING];
 	ULONG rhead, rcount;
 };
@@ -75,6 +81,12 @@ static ULONG tap;
 static BOOL read_out, dnetd_gone;
 static UBYTE rframe[FRAMEBUF], wframe[FRAMEBUF];
 static struct client *cls;       /* MAXCL of them, large: allocated */
+
+/* the offered service (LTC_OFFER) */
+static ULONG offer_id;          /* 0: none */
+static struct DnMsg *paccept;   /* waiting LTC_ACCEPT */
+static ULONG accept_deadline;
+static char our_node[LAT_NAMELEN + 1];
 static ULONG generation, now;
 static const char *logfile;
 static int verbose;
@@ -266,6 +278,10 @@ static void env_event(void *ctx, int sid, int ev, int reason)
 		return;
 	}
 	c->sid = -1;
+	if (c->incoming == 1) {
+		c->used = 0;                    /* nobody took it */
+		return;
+	}
 	if (c->pconnect) {
 		/* nobody will ever see this id */
 		reply(c->pconnect, -1, reason);
@@ -276,6 +292,61 @@ static void env_event(void *ctx, int sid, int ev, int reason)
 	c->reason = reason;
 	serve_read(c);
 	serve_write(c);
+}
+
+/* give a waiting incoming session to the waiting LTC_ACCEPT */
+static void hand_out(struct client *c)
+{
+	struct DnMsg *m = paccept;
+	struct LatIncoming *li = m->dm_Buf;
+
+	paccept = NULL;
+	memset(li, 0, sizeof *li);
+	strcpy(li->li_Node, c->node);
+	strcpy(li->li_Port, c->port);
+	c->incoming = 2;
+	m->dm_Id = c->id;
+	reply(m, 1, 0);                 /* 0 would read as DNR_TIMEOUT */
+}
+
+static struct client *new_client(void)
+{
+	int i;
+
+	for (i = 0; i < MAXCL; i++)
+		if (!cls[i].used) {
+			struct client *c = &cls[i];
+			memset(c, 0, sizeof *c);
+			c->used = 1;
+			c->id = (ULONG)i | (++generation << 8);
+			c->sid = -1;
+			return c;
+		}
+	return NULL;
+}
+
+/* a terminal server starts a session to the offered service */
+static void env_incoming(void *ctx, int sid, const char *node, const char *port)
+{
+	struct client *c;
+	int i, queued = 0;
+
+	(void)ctx;
+	for (i = 0; i < MAXCL; i++)
+		if (cls[i].used && cls[i].incoming == 1)
+			queued++;
+	if (!offer_id || queued >= MAXQUEUED || !(c = new_client())) {
+		lat_answer(sid, offer_id ? 5 : LAT_R_NOSVC);
+		return;
+	}
+	c->sid = sid;
+	c->incoming = 1;
+	c->answer_deadline = now + ANSWER_MS;
+	strncpy(c->node, node, 16);
+	strncpy(c->port, port, 16);
+	mlog("latd: incoming session from %s/%s\n", (STRPTR)node, (STRPTR)port);
+	if (paccept)
+		hand_out(c);
 }
 
 static void env_log(void *ctx, const char *msg)
@@ -324,22 +395,17 @@ static BOOL try_connect(struct client *c)
 static void do_connect(struct DnMsg *m)
 {
 	struct LatConnect *lc = m->dm_Buf;
-	struct client *c = NULL;
-	int i;
+	struct client *c;
 
-	for (i = 0; i < MAXCL; i++)
-		if (!cls[i].used) {
-			c = &cls[i];
-			break;
-		}
-	if (!c || !lc || !lc->lc_Service[0]) {
-		reply(m, -1, c ? LAT_R_NOSVC : 5);
+	if (!lc || !lc->lc_Service[0]) {
+		reply(m, -1, LAT_R_NOSVC);
 		return;
 	}
-	memset(c, 0, sizeof *c);
-	c->used = 1;
-	c->id = (ULONG)i | (++generation << 8);
-	c->sid = -1;
+	c = new_client();
+	if (!c) {
+		reply(m, -1, 5);
+		return;
+	}
 	c->want = *lc;
 	c->want.lc_Service[16] = 0;
 	c->want.lc_Port[16] = 0;
@@ -378,6 +444,59 @@ static void do_list(struct DnMsg *m)
 	reply(m, n, 0);
 }
 
+/* withdraw the offer: reject what waits, stop announcing */
+static void unoffer(void)
+{
+	int i;
+
+	for (i = 0; i < MAXCL; i++)
+		if (cls[i].used && cls[i].incoming) {
+			if (cls[i].sid >= 0)
+				lat_answer(cls[i].sid, 5);
+			cls[i].used = 0;
+		}
+	if (paccept)
+		reply(paccept, -1, LAT_R_NOSVC);
+	paccept = NULL;
+	offer_id = 0;
+	lat_offer(NULL, NULL);
+	mlog("latd: service withdrawn\n");
+}
+
+static void do_offer(struct DnMsg *m)
+{
+	const char *name = m->dm_Buf;
+
+	if (offer_id) {
+		reply(m, -1, 6);                /* in use */
+		return;
+	}
+	if (!name || !*name)
+		name = our_node;
+	offer_id = 0x8000UL | (++generation << 16);
+	lat_offer(name, "Amiga maintenance login");
+	mlog("latd: offering service %s\n", (STRPTR)name);
+	m->dm_Id = offer_id;
+	reply(m, 0, 0);
+}
+
+static void do_accept(struct DnMsg *m)
+{
+	int i;
+
+	if (!offer_id || m->dm_Link != offer_id || paccept || !m->dm_Buf) {
+		reply(m, -1, LAT_R_NOSVC);
+		return;
+	}
+	paccept = m;
+	accept_deadline = now + (m->dm_Timeout > 0 ? (ULONG)m->dm_Timeout : 0x7fffffffUL);
+	for (i = 0; i < MAXCL; i++)
+		if (cls[i].used && cls[i].incoming == 1) {
+			hand_out(&cls[i]);
+			break;
+		}
+}
+
 static void handle(struct DnMsg *m)
 {
 	struct client *c;
@@ -388,6 +507,17 @@ static void handle(struct DnMsg *m)
 		return;
 	case LTC_LIST:
 		do_list(m);
+		return;
+	case LTC_OFFER:
+		do_offer(m);
+		return;
+	case LTC_ACCEPT:
+		do_accept(m);
+		return;
+	case LTC_UNOFFER:
+		if (offer_id && m->dm_Link == offer_id)
+			unoffer();
+		reply(m, 0, 0);
 		return;
 	}
 	c = find_client(m->dm_Link);
@@ -427,6 +557,17 @@ static void handle(struct DnMsg *m)
 	case LTC_BREAK:
 		reply(m, c->sid >= 0 && !lat_break(c->sid) ? 0 : -1, 0);
 		break;
+	case LTC_ANSWER:
+		if (c->incoming != 2 || c->sid < 0) {
+			reply(m, -1, c->reason);
+			break;
+		}
+		c->incoming = 0;
+		lat_answer(c->sid, (int)m->dm_Reason);
+		if (m->dm_Reason)
+			c->used = 0;            /* rejected: gone */
+		reply(m, 0, 0);
+		break;
 	default:
 		reply(m, -1, 5);
 	}
@@ -439,10 +580,22 @@ static void tick(unsigned ms)
 
 	now += ms;
 	lat_tick(ms);
+	if (paccept && (LONG)(now - accept_deadline) >= 0) {
+		struct DnMsg *m = paccept;
+		paccept = NULL;
+		reply(m, DNR_TIMEOUT, 0);
+	}
 	for (i = 0; i < MAXCL; i++) {
 		c = &cls[i];
 		if (!c->used)
 			continue;
+		if (c->incoming && (LONG)(now - c->answer_deadline) >= 0) {
+			/* nobody took or answered it in time */
+			if (c->sid >= 0)
+				lat_answer(c->sid, 5);
+			c->used = 0;
+			continue;
+		}
 		if (c->pconnect && c->sid < 0 && try_connect(c))
 			continue;
 		if (c->pconnect && (LONG)(now - c->connect_deadline) >= 0) {
@@ -629,10 +782,12 @@ int main(void)
 	env.send_frame = env_send;
 	env.data = env_data;
 	env.event = env_event;
+	env.incoming = env_incoming;
 	env.log = env_log;
 	env.verbose = verbose = args[0] ? (int)*(LONG *)args[0] : 0;
 	memcpy(env.mac, ti.dti_Address, 6);
 	node_name(env.node);
+	strcpy(our_node, env.node);
 	strcpy(env.ident, "Amiga DECnet-Term");
 	GetSysTime(&last);
 	lat_init(&env, (unsigned)(last.tv_secs ^ last.tv_micro));
@@ -718,6 +873,9 @@ out:
 	if (pubport)
 		while ((m = (struct DnMsg *)GetMsg(pubport)) != NULL)
 			reply(m, -1, LAT_R_USER);
+	if (paccept)
+		reply(paccept, -1, LAT_R_USER);
+	paccept = NULL;
 	if (cls)
 		for (i = 0; i < MAXCL; i++) {
 			struct client *c = &cls[i];

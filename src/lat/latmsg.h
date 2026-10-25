@@ -20,6 +20,19 @@
  *   LTC_LIST     dm_Buf/dm_Len -> dm_Result length of a text with one
  *                line per known service
  *
+ * Offering a service (host role, for dnmaint):
+ *   LTC_OFFER    dm_Buf service name (NULL or "": our node name) -> dm_Id
+ *                offer; latd announces the service while the offer stands
+ *                (one at a time)
+ *   LTC_ACCEPT   dm_Link offer, dm_Buf struct LatIncoming, dm_Timeout ->
+ *                dm_Result 1 and dm_Id session (READ/WRITE/CLOSE as
+ *                above), which waits for LTC_ANSWER; DNR_TIMEOUT (0) when
+ *                none came, -1 when the offer is gone
+ *   LTC_ANSWER   dm_Link session, dm_Reason 0 to accept, else a LAT
+ *                reason (14 access denied); a rejected session is gone.
+ *                Unanswered sessions are rejected after 30 s
+ *   LTC_UNOFFER  dm_Link offer
+ *
  * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
@@ -28,12 +41,22 @@
 
 #define LAT_PORTNAME "LAT"
 
-#define LTC_BREAK 100
-#define LTC_LIST  101
+#define LTC_BREAK   100
+#define LTC_LIST    101
+#define LTC_OFFER   102
+#define LTC_ACCEPT  103
+#define LTC_ANSWER  104
+#define LTC_UNOFFER 105
 
 struct LatConnect {
 	char lc_Service[17];
 	char lc_Port[17];           /* our port name, e.g. "LAT4" */
+};
+
+/* LTC_ACCEPT: who comes in */
+struct LatIncoming {
+	char li_Node[17];           /* the terminal server's node name */
+	char li_Port[17];           /* its port name */
 };
 
 #endif

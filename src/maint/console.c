@@ -5,7 +5,7 @@
  * CTERM character reads; in cooked mode the keys go through our own
  * line editor with history (edit.c), as the Amiga console has one and
  * the terminal side's editing differs from node to node. ACTION_WRITE
- * goes out through ctermh_write. Translations: LF -> CR LF out,
+ * goes out through t_write (CTERM or LAT). Translations: LF -> CR LF out,
  * CSI 0x9B <-> ESC [, form feed -> ESC [H ESC [2J out.
  * ACTION_DISK_INFO hands out a ConUnit with the terminal size and the
  * cursor position, which we follow from our output (More 44.3 pages
@@ -93,18 +93,18 @@ static void con_serve(struct msession *s)
 		ReplyPkt(dp, 0, 0);
 		return;
 	}
-	if (!s->cth.read_pending)
-		ctermh_read(&s->cth, CTH_CHAR, NULL, 0, NULL, 0);
+	if (!t_read_pending(s))
+		t_read(s, CTH_CHAR, NULL, 0);
 }
 
 int con_width(struct msession *s)
 {
-	return s->cth.width > 0 ? s->cth.width : 80;
+	return t_width(s);
 }
 
 static int con_height(struct msession *s)
 {
-	return s->cth.height > 0 ? s->cth.height : 24;
+	return t_height(s);
 }
 
 /* size and cursor into our ConUnit */
@@ -212,7 +212,7 @@ void con_out(struct msession *s, const char *buf, long n)
 		return;
 	track(s, buf, n);
 	cu_sync(s);
-	ctermh_write(&s->cth, buf, n);
+	t_write(s, buf, n);
 }
 
 /* append a decimal number */
@@ -318,7 +318,7 @@ void con_packet(struct msession *s, struct DosPacket *dp)
 		if (!s->sigtask)
 			s->sigtask = sender(dp);
 		ReplyPkt(dp, DOSTRUE, 0);
-		if (s->cth.verbose)
+		if (s->verbose)
 			mlog("dnmaint: console opened (%ld open)\n", (long)s->handles);
 		break;
 	case ACTION_END:
@@ -327,7 +327,7 @@ void con_packet(struct msession *s, struct DosPacket *dp)
 		ReplyPkt(dp, DOSTRUE, 0);
 		if (s->handles > 0 && --s->handles == 0)
 			s->shell_gone = TRUE;
-		if (s->cth.verbose)
+		if (s->verbose)
 			mlog("dnmaint: console closed (%ld open)\n", (long)s->handles);
 		break;
 	case ACTION_READ:
@@ -356,8 +356,8 @@ void con_packet(struct msession *s, struct DosPacket *dp)
 			ReplyPkt(dp, DOSTRUE, 0);
 			break;
 		}
-		if (s->state != MS_DONE && !s->cth.read_pending)
-			ctermh_read(&s->cth, CTH_CHAR, NULL, 0, NULL, 0);
+		if (s->state != MS_DONE && !t_read_pending(s))
+			t_read(s, CTH_CHAR, NULL, 0);
 		ReplyPkt(dp, DOSFALSE, 0);
 		break;
 	case ACTION_CHANGE_SIGNAL:

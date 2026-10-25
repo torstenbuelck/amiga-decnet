@@ -17,8 +17,10 @@
  * Started from DECnet-Start when the installer enabled it. Waits for
  * connects on object 42, rejects every node but the configured one
  * (DNREASON_ACCESS), then runs one session at a time (see session.c);
- * further connects wait at dnetd meanwhile. Ctrl-C ends it, also
- * during a session.
+ * further connects wait at dnetd meanwhile. With LAT nodes configured
+ * and latd running it also offers the service named after the node:
+ * terminal servers not in the list are rejected (access denied). Ctrl-C
+ * ends it, also during a session.
  *
  * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
@@ -37,7 +39,7 @@
 #include "../amiga/dnmsg.h"
 #include "dnmaint.h"
 
-static const char version[] = "$VER: dnmaint 0.3 (25.10.2026)";
+static const char version[] = "$VER: dnmaint 0.4 (25.10.2026)";
 
 #define MAINT_PORTNAME "DECnet-Maint"
 
@@ -72,6 +74,7 @@ int cfg_load(struct mcfg *cfg)
 
 	memset(cfg, 0, sizeof *cfg);
 	env("DECnet/maint-password", cfg->password, sizeof cfg->password);
+	env("DECnet/maint-latnodes", cfg->latnodes, sizeof cfg->latnodes);
 	if (env("DECnet/maint-node", node, sizeof node)) {
 		/* area.node, or a name from ENV:DECnet/nodes */
 		a = DnNodeAddr((CONST_STRPTR)node);
@@ -85,6 +88,32 @@ int cfg_load(struct mcfg *cfg)
 BOOL node_allowed(const struct mcfg *cfg, UWORD node)
 {
 	return cfg->node != 0 && node == cfg->node;
+}
+
+static int upcase(int c)
+{
+	return c >= 'a' && c <= 'z' ? c - 32 : c;
+}
+
+/* the LAT node (terminal server) is in maint-latnodes */
+BOOL latnode_allowed(const struct mcfg *cfg, const char *node)
+{
+	const char *p = cfg->latnodes;
+	int i;
+
+	if (!*node)
+		return FALSE;
+	while (*p) {
+		while (*p == ' ' || *p == ',' || *p == '\t')
+			p++;
+		for (i = 0; node[i] && upcase(p[i]) == upcase(node[i]); i++)
+			;
+		if (!node[i] && (p[i] == 0 || p[i] == ' ' || p[i] == ',' || p[i] == '\t'))
+			return TRUE;
+		while (*p && *p != ' ' && *p != ',' && *p != '\t')
+			p++;
+	}
+	return FALSE;
 }
 
 static BOOL dnetd_running(void)
@@ -159,7 +188,9 @@ int main(void)
 	struct DnListener *ls;
 	struct DnConnInfo ci;
 	struct DnLink *l;
-	LONG rc = RETURN_FAIL;
+	LONG rc = RETURN_FAIL, lid;
+	ULONG offer = 0;
+	char lnode[17], lport[17];
 	BOOL ok;
 	BPTR fh;
 
@@ -211,7 +242,44 @@ int main(void)
 	}
 	mlog("dnmaint: serving object 42, Ctrl-C or dnmaint STOP ends\n");
 	while (!broken()) {
-		l = DnAccept(ls, &ci, 1000);
+		/* LAT: offered while LAT nodes are configured and latd runs
+		   (it may start later, or again) */
+		cfg_load(&cfg);
+		if (!offer && cfg.latnodes[0] && cfg.password[0]) {
+			offer = lt_offer();
+			if (offer)
+				mlog("dnmaint: offered over LAT\n");
+		} else if (offer && !cfg.latnodes[0]) {
+			lt_unoffer(offer);
+			offer = 0;
+			mlog("dnmaint: no LAT nodes any more, LAT offer withdrawn\n");
+		}
+		if (offer) {
+			lid = lt_accept(offer, lnode, lport, 500);
+			if (lid < 0) {
+				offer = 0;              /* latd has stopped */
+			} else if (lid > 0) {
+				ok = cfg.password[0] && latnode_allowed(&cfg, lnode);
+				mlog("dnmaint: LAT connect from %s/%s %s\n", (STRPTR)lnode,
+				     (STRPTR)lport, ok ? "accepted" : "refused");
+				if (!ok) {
+					lt_answer((ULONG)lid, 14);   /* access denied; gone */
+					continue;
+				}
+				if (lt_answer((ULONG)lid, 0)) {
+					lt_close((ULONG)lid);   /* ended meanwhile */
+					continue;
+				}
+				if (session_init_lat(&sess, &cfg, (ULONG)lid) == 0) {
+					sess.verbose = args[0] != 0;
+					session_run(&sess);
+				}
+				session_end(&sess);     /* closes the session */
+				mlog("dnmaint: session ended\n");
+				continue;
+			}
+		}
+		l = DnAccept(ls, &ci, offer ? 500 : 1000);
 		if (!l) {
 			/* NULL after a timeout, or at once when dnetd is gone:
 			   then end, instead of spinning (a new dnetd would not
@@ -236,12 +304,14 @@ int main(void)
 			continue;
 		}
 		if (session_init(&sess, &cfg, l) == 0) {
-			sess.cth.verbose = args[0] != 0;
+			sess.verbose = sess.cth.verbose = args[0] != 0;
 			session_run(&sess);
 		}
 		session_end(&sess);             /* closes the link */
 		mlog("dnmaint: session ended\n");
 	}
+	if (offer)
+		lt_unoffer(offer);
 	DnUnlisten(ls);
 	rc = RETURN_OK;
 out:

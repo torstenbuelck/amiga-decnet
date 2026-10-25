@@ -6,9 +6,14 @@
  * another node is rejected before CTERM starts; without a configured node
  * and password the service refuses every connect.
  *
+ * The same login is offered over LAT (latd, service named after the
+ * node) to the terminal servers named in maint-latnodes.
+ *
  * Configuration (read from ENV: only, see the installer):
  *   ENV:DECnet/maint-node      the only node allowed (area.node, or a
  *                              name from ENV:DECnet/nodes)
+ *   ENV:DECnet/maint-latnodes  LAT node names allowed (blank or comma
+ *                              separated); none: no LAT
  *   ENV:DECnet/maint-password  password asked after connect
  *
  * Copyright (C) 2026  Torsten Bülck (tuti)
@@ -32,6 +37,7 @@
 /* configuration, from ENV:DECnet/maint-* */
 struct mcfg {
 	UWORD node;                     /* allowed node, 0 = none configured */
+	char  latnodes[120];            /* allowed LAT nodes, empty = no LAT */
 	char  password[MAINT_PWMAX];    /* empty = none configured */
 };
 
@@ -46,6 +52,18 @@ struct msession {
 	struct mcfg    *cfg;
 	struct DnLink  *link;
 	struct ctermh   cth;
+	int             verbose;
+
+	/* LAT instead of CTERM: a raw terminal stream through latd */
+	BOOL            lat;
+	ULONG           latid;          /* latd's session id */
+	int             lread;          /* read pending: CTH_CHAR/CTH_SECRET + 1 */
+	char            lline[MAINT_PWMAX + 2];
+	int             llen;
+	BOOL            lcr;            /* last key was CR (CR LF: one end) */
+	BOOL            lout_cr;        /* last output byte was CR */
+	char            ahead[256];     /* keys before a read was asked for */
+	int             aheadlen;
 	int             state;
 	int             tries;          /* wrong passwords so far */
 
@@ -83,15 +101,31 @@ struct msession {
 void mlog(const char *fmt, ...);
 int  cfg_load(struct mcfg *cfg);
 BOOL node_allowed(const struct mcfg *cfg, UWORD node);
+BOOL latnode_allowed(const struct mcfg *cfg, const char *node);
 
-/* session.c: CTERM over the link */
+/* session.c: CTERM over the link, or LAT through latd */
 int  session_init(struct msession *s, struct mcfg *cfg, struct DnLink *l);
+int  session_init_lat(struct msession *s, struct mcfg *cfg, ULONG latid);
 int  session_run(struct msession *s);
 void session_end(struct msession *s);
 int  session_net_write(void *ctx, const unsigned char *buf, long n);
 void session_input(void *ctx, const char *buf, long n, int term);
 void session_interrupt(void *ctx, int ch);
 void session_log(void *ctx, const char *msg);
+/* the terminal, whichever way it came: output (LF -> CR LF), a read of
+   kind CTH_CHAR or CTH_SECRET with an optional prompt, its size */
+void t_write(struct msession *s, const char *buf, long n);
+int  t_read(struct msession *s, int kind, const char *prompt, long plen);
+BOOL t_read_pending(struct msession *s);
+int  t_width(struct msession *s);
+int  t_height(struct msession *s);
+
+/* latlink.c: latd's offer of our service */
+ULONG lt_offer(void);
+LONG  lt_accept(ULONG offer, char *node, char *port, LONG timeout);
+int   lt_answer(ULONG id, LONG reason);
+void  lt_close(ULONG id);
+void  lt_unoffer(ULONG offer);
 
 /* login.c: password dialogue */
 int  login_start(struct msession *s);

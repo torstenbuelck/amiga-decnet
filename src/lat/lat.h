@@ -3,7 +3,9 @@
  *
  * The Amiga plays the part of a terminal server: it learns the services
  * from the multicast announcements, opens a virtual circuit to the node
- * offering one and runs terminal sessions in slots on it. Like the
+ * offering one and runs terminal sessions in slots on it. It can also
+ * be the host: offer a service of its own (lat_offer), announce it and
+ * take sessions that terminal servers start (incoming, lat_answer). Like the
  * DECnet core it talks to the outside only through callbacks (frames
  * out, session data and events) and keeps all state in static tables,
  * so the Linux test (dntool lat) and the Amiga latd share it.
@@ -29,6 +31,8 @@
 #define LAT_EV_UP       1       /* the service accepted the session */
 #define LAT_EV_DOWN     2       /* the session is over, reason given */
 
+#define LAT_ANNOUNCE_S  20      /* our service announcements, seconds */
+
 /* reasons for LAT_EV_DOWN (beyond the slot reasons 0-15 of the
    protocol, see lat_reason_text) */
 #define LAT_R_USER      1       /* we disconnected */
@@ -46,6 +50,10 @@ struct lat_env {
 	void (*data)(void *ctx, int sid, const unsigned char *buf, unsigned len);
 	/* LAT_EV_UP / LAT_EV_DOWN with a reason */
 	void (*event)(void *ctx, int sid, int ev, int reason);
+	/* host role: a terminal server starts a session to our service;
+	   answer it with lat_answer (until then nothing is sent to it).
+	   node: the terminal server, port: its port name. Optional */
+	void (*incoming)(void *ctx, int sid, const char *node, const char *port);
 	void (*log)(void *ctx, const char *msg);        /* optional */
 	void *ctx;
 	int verbose;
@@ -90,6 +98,13 @@ int  lat_break(int sid);
 void lat_disconnect(int sid);
 /* stop every circuit at once (LAT_EV_DOWN for what is left) */
 void lat_shutdown(void);
+
+/* host role: offer the service name (announced every LAT_ANNOUNCE_S
+   seconds); NULL stops offering, sessions already running go on */
+void lat_offer(const char *name, const char *ident);
+/* accept (reason 0) or reject (a slot reason: 5 resources, 14 access
+   denied, ...) an incoming session; a rejected one is gone at once */
+int  lat_answer(int sid, int reason);
 
 const char *lat_reason_text(int reason);
 

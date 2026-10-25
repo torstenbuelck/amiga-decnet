@@ -2,7 +2,10 @@
  * session.c - one maintenance session: CTERM host over the DECnet link.
  *
  * Pumps messages between the link (DnRead) and ctermh, and between
- * ctermh and the console handler the Shell uses (console.c).
+ * ctermh and the console handler the Shell uses (console.c). A LAT
+ * session comes through latd instead and carries the terminal stream
+ * as it is: the t_ functions below do what ctermh does for CTERM (no
+ * echo for the password, LF -> CR LF, ^C/^Y from the stream).
  *
  * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
@@ -17,6 +20,7 @@
 #include <string.h>
 
 #include "../amiga/dnmsg.h"
+#include "../lat/latmsg.h"
 #include "dnmaint.h"
 
 #define NETBUF       2048       /* one NSP message from the terminal */
@@ -31,8 +35,8 @@
  * Writes go through DnWrite(). One session at a time, so this state is
  * static.
  */
-static struct MsgPort *netport;
-static struct DnMsg rmsg;
+static struct MsgPort *netport, *wport;
+static struct DnMsg rmsg, wmsg;
 static UBYTE netbuf[NETBUF];
 static BOOL read_out;           /* rmsg is at dnetd */
 static BOOL link_down;          /* the link is gone */
@@ -47,12 +51,12 @@ static void issue_read(struct msession *s)
 	rmsg.dm_Msg.mn_ReplyPort = netport;
 	rmsg.dm_Msg.mn_Length = sizeof rmsg;
 	rmsg.dm_Cmd = DNC_READ;
-	rmsg.dm_Link = s->link->dl_Id;
+	rmsg.dm_Link = s->lat ? s->latid : s->link->dl_Id;
 	rmsg.dm_Buf = netbuf;
 	rmsg.dm_Len = NETBUF;
 	rmsg.dm_Timeout = 1000;
 	Forbid();
-	dn = FindPort((STRPTR)DN_PORTNAME);
+	dn = FindPort((STRPTR)(s->lat ? LAT_PORTNAME : DN_PORTNAME));
 	if (dn)
 		PutMsg(dn, &rmsg.dm_Msg);
 	Permit();
@@ -62,22 +66,167 @@ static void issue_read(struct msession *s)
 		link_down = TRUE;               /* dnetd is gone */
 }
 
+static void lat_keys(struct msession *s, const char *buf, long n);
+
 /* the read came back: 1 = a second went by, 0 = data, -1 = link gone */
 static int net_reply(struct msession *s)
 {
 	read_out = FALSE;
 	if (rmsg.dm_Result == DNR_TIMEOUT)
 		return 1;
-	if (rmsg.dm_Result < 0 || ctermh_net(&s->cth, netbuf, rmsg.dm_Result) < 0) {
+	if (rmsg.dm_Result < 0 ||
+	    (!s->lat && ctermh_net(&s->cth, netbuf, rmsg.dm_Result) < 0)) {
 		link_down = TRUE;
 		return -1;
 	}
+	if (s->lat)
+		lat_keys(s, (const char *)netbuf, rmsg.dm_Result);
 	return 0;
 }
 
 static void say(struct msession *s, const char *text)
 {
-	ctermh_write(&s->cth, text, (long)strlen(text));
+	t_write(s, text, (long)strlen(text));
+}
+
+/* ---- the terminal: CTERM (ctermh) or LAT (raw stream) -------------------- */
+
+/* keys to latd; waits for its reply (latd holds it while the session's
+   buffer is full) */
+static void lat_send(struct msession *s, const char *buf, long n)
+{
+	struct MsgPort *p;
+
+	if (link_down || n <= 0)
+		return;
+	wmsg.dm_Msg.mn_Node.ln_Type = NT_MESSAGE;
+	wmsg.dm_Msg.mn_ReplyPort = wport;
+	wmsg.dm_Msg.mn_Length = sizeof wmsg;
+	wmsg.dm_Cmd = DNC_WRITE;
+	wmsg.dm_Link = s->latid;
+	wmsg.dm_Buf = (APTR)buf;
+	wmsg.dm_Len = n;
+	Forbid();
+	p = FindPort((STRPTR)LAT_PORTNAME);
+	if (p)
+		PutMsg(p, &wmsg.dm_Msg);
+	Permit();
+	if (!p) {
+		link_down = TRUE;
+		return;
+	}
+	while (!GetMsg(wport))
+		WaitPort(wport);
+	if (wmsg.dm_Result < 0)
+		link_down = TRUE;
+}
+
+void t_write(struct msession *s, const char *buf, long n)
+{
+	char out[512];
+	long i, o = 0;
+
+	if (!s->lat) {
+		ctermh_write(&s->cth, buf, n);
+		return;
+	}
+	for (i = 0; i < n; i++) {
+		if (o >= (long)sizeof out - 2) {
+			lat_send(s, out, o);
+			o = 0;
+		}
+		if (buf[i] == '\n' && !s->lout_cr)
+			out[o++] = '\r';
+		out[o++] = buf[i];
+		s->lout_cr = buf[i] == '\r';
+	}
+	lat_send(s, out, o);
+}
+
+int t_read(struct msession *s, int kind, const char *prompt, long plen)
+{
+	char keys[sizeof s->ahead];
+	int n;
+
+	if (!s->lat)
+		return ctermh_read(&s->cth, kind, prompt, plen, NULL, 0);
+	if (prompt && plen > 0)
+		t_write(s, prompt, plen);
+	s->lread = kind + 1;
+	s->llen = 0;
+	if (s->aheadlen) {              /* typed before we asked */
+		n = s->aheadlen;
+		memcpy(keys, s->ahead, n);
+		s->aheadlen = 0;
+		lat_keys(s, keys, n);
+	}
+	return 0;
+}
+
+BOOL t_read_pending(struct msession *s)
+{
+	return s->lat ? s->lread != 0 : s->cth.read_pending != 0;
+}
+
+/* LAT tells no terminal size */
+int t_width(struct msession *s)
+{
+	return !s->lat && s->cth.width > 0 ? s->cth.width : 80;
+}
+
+int t_height(struct msession *s)
+{
+	return !s->lat && s->cth.height > 0 ? s->cth.height : 24;
+}
+
+/* keys from the LAT terminal: to the pending read (key reads at once,
+   the password up to CR, without echo), ^C/^Y in the Shell as a break,
+   the rest kept until a read asks */
+static void lat_keys(struct msession *s, const char *buf, long n)
+{
+	char got[sizeof s->ahead];
+	long i, k = 0;
+	char c;
+
+	for (i = 0; i < n; i++) {
+		c = buf[i];
+		if (s->state == MS_SHELL && (c == 0x03 || c == 0x19)) {
+			session_interrupt(s, c);
+			continue;
+		}
+		if (s->lread == CTH_CHAR + 1) {
+			if (k < (long)sizeof got)
+				got[k++] = c;
+			continue;
+		}
+		if (s->lread == CTH_SECRET + 1) {
+			if (c == '\n' && s->lcr) {     /* CR LF: one end of line */
+				s->lcr = FALSE;
+				continue;
+			}
+			s->lcr = c == '\r';
+			if (c == '\r' || c == '\n') {
+				s->lread = 0;
+				t_write(s, "\n", 1);       /* the end of the line shows */
+				session_input(s, s->lline, s->llen, '\r');
+				s->llen = 0;
+			} else if (c == '\b' || c == 0x7f) {
+				if (s->llen > 0)
+					s->llen--;
+			} else if (c == 0x15 || c == 0x18) {
+				s->llen = 0;            /* ^U / ^X */
+			} else if ((unsigned char)c >= 0x20 && s->llen < MAINT_PWMAX) {
+				s->lline[s->llen++] = c;
+			}
+			continue;
+		}
+		if (s->aheadlen < (int)sizeof s->ahead)
+			s->ahead[s->aheadlen++] = c;
+	}
+	if (k) {
+		s->lread = 0;
+		session_input(s, got, k, 0);
+	}
 }
 
 /* set up the session and ctermh callbacks, send BIND; call
@@ -91,11 +240,13 @@ int session_init(struct msession *s, struct mcfg *cfg, struct DnLink *l)
 	read_out = FALSE;
 	link_down = FALSE;
 	netport = CreateMsgPort();
-	if (!netport)
-		return -1;
-	if (con_start(s)) {
-		DeleteMsgPort(netport);
-		netport = NULL;
+	wport = CreateMsgPort();
+	if (!netport || !wport || con_start(s)) {
+		if (netport)
+			DeleteMsgPort(netport);
+		if (wport)
+			DeleteMsgPort(wport);
+		netport = wport = NULL;
 		return -1;
 	}
 	s->cth.net_write = session_net_write;
@@ -105,6 +256,31 @@ int session_init(struct msession *s, struct mcfg *cfg, struct DnLink *l)
 	s->cth.ctx = s;
 	ctermh_init(&s->cth);
 	return ctermh_start(&s->cth);
+}
+
+/* a LAT session latd handed over (already accepted): straight to the
+   password, no BIND; call session_end afterwards in any case */
+int session_init_lat(struct msession *s, struct mcfg *cfg, ULONG latid)
+{
+	memset(s, 0, sizeof *s);
+	s->cfg = cfg;
+	s->lat = TRUE;
+	s->latid = latid;
+	s->state = MS_BIND;
+	read_out = FALSE;
+	link_down = FALSE;
+	netport = CreateMsgPort();
+	wport = CreateMsgPort();
+	if (!netport || !wport || con_start(s)) {
+		if (netport)
+			DeleteMsgPort(netport);
+		if (wport)
+			DeleteMsgPort(wport);
+		netport = wport = NULL;
+		return -1;
+	}
+	s->state = MS_LOGIN;
+	return login_start(s);
 }
 
 /* main loop until the session is over; 0 = ended normally */
@@ -188,13 +364,18 @@ void session_end(struct msession *s)
 	struct Message *m;
 
 	/* tell the terminal first: con_stop can wait for a busy command */
-	if (!link_down && s->cth.bound && !s->cth.unbound)
+	if (!s->lat && !link_down && s->cth.bound && !s->cth.unbound)
 		ctermh_unbind(&s->cth);
 	con_stop(s);
 	if (s->link) {
 		/* dnetd replies the outstanding read before the close */
 		DnClose(s->link);
 		s->link = NULL;
+	}
+	if (s->lat && s->latid) {
+		/* so does latd */
+		lt_close(s->latid);
+		s->latid = 0;
 	}
 	while (read_out) {
 		WaitPort(netport);
@@ -205,6 +386,10 @@ void session_end(struct msession *s)
 	if (netport) {
 		DeleteMsgPort(netport);
 		netport = NULL;
+	}
+	if (wport) {
+		DeleteMsgPort(wport);
+		wport = NULL;
 	}
 }
 

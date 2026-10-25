@@ -19,14 +19,14 @@
 
 static void say(struct msession *s, const char *text)
 {
-	ctermh_write(&s->cth, text, (long)strlen(text));
+	t_write(s, text, (long)strlen(text));
 }
 
 static int prompt(struct msession *s)
 {
 	static const char pw[] = "Password: ";
 
-	return ctermh_read(&s->cth, CTH_SECRET, pw, sizeof pw - 1, NULL, 0);
+	return t_read(s, CTH_SECRET, pw, sizeof pw - 1);
 }
 
 /* banner and first password prompt */
