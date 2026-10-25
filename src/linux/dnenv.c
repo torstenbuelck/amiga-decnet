@@ -30,6 +30,9 @@ static int ifindex;
 static unsigned char mymac[6];
 static volatile sig_atomic_t stop;
 static unsigned long last_tick;
+static void (*other_input)(const unsigned char *src, const unsigned char *dst,
+                           const unsigned char *payload, unsigned len);
+static unsigned other_type;
 
 static void on_signal(int sig)
 {
@@ -42,19 +45,18 @@ int dnenv_stopped(void)
 	return stop;
 }
 
-static void send_frame(void *ctx, const dn_u8 *dst, const dn_u8 *payload, unsigned len)
+static void send_eth(unsigned type, const dn_u8 *dst, const dn_u8 *payload, unsigned len)
 {
 	unsigned char f[1600];
 	struct sockaddr_ll sa;
 	unsigned n = 14 + len;
 
-	(void)ctx;
 	if (n > sizeof f)
 		return;
 	memcpy(f, dst, 6);
 	memcpy(f + 6, mymac, 6);
-	f[12] = DN_ETHERTYPE >> 8;
-	f[13] = DN_ETHERTYPE & 0xff;
+	f[12] = (unsigned char)(type >> 8);
+	f[13] = (unsigned char)type;
 	memcpy(f + 14, payload, len);
 	while (n < 60)
 		f[n++] = 0;
@@ -65,6 +67,30 @@ static void send_frame(void *ctx, const dn_u8 *dst, const dn_u8 *payload, unsign
 	memcpy(sa.sll_addr, dst, 6);
 	if (sendto(sock, f, n, 0, (struct sockaddr *)&sa, sizeof sa) < 0)
 		perror("sendto");
+}
+
+static void send_frame(void *ctx, const dn_u8 *dst, const dn_u8 *payload, unsigned len)
+{
+	(void)ctx;
+	send_eth(DN_ETHERTYPE, dst, payload, len);
+}
+
+void dnenv_other(unsigned type, void (*input)(const unsigned char *src,
+                 const unsigned char *dst, const unsigned char *payload, unsigned len))
+{
+	other_type = type;
+	other_input = input;
+}
+
+void dnenv_send(unsigned type, const unsigned char *dst, const unsigned char *payload,
+                unsigned len)
+{
+	send_eth(type, dst, payload, len);
+}
+
+void dnenv_mac(unsigned char *mac)
+{
+	memcpy(mac, mymac, 6);
 }
 
 static void *xalloc(void *ctx, unsigned n) { (void)ctx; return malloc(n); }
@@ -173,6 +199,11 @@ void dnenv_pump(int timeout_ms)
 			    memcmp(f + 6, mymac, 6) != 0 &&
 			    (!memcmp(f, mymac, 6) || (f[0] & 1)))
 				dn_input(f + 6, f, f + 14, (unsigned)n - 14);
+			else if (n > 14 && other_input && from.sll_pkttype != PACKET_OUTGOING &&
+			         f[12] == (other_type >> 8) && f[13] == (other_type & 0xff) &&
+			         memcmp(f + 6, mymac, 6) != 0 &&
+			         (!memcmp(f, mymac, 6) || (f[0] & 1)))
+				other_input(f + 6, f, f + 14, (unsigned)n - 14);
 			fl = sizeof from;
 		}
 	} else if (r < 0 && errno != EINTR) {

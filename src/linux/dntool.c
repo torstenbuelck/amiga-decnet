@@ -43,6 +43,7 @@
 #include "../nml/nml.h"
 #include "../cterm/cterm.h"
 #include "../cterm/ctermh.h"
+#include "../lat/lat.h"
 
 static const struct { const char *name; const char *addr; } nodes[] = {
 	{ "EUGENE", "23.21" }, { "HOWIE", "23.208" }, { "COLT", "23.209" },
@@ -431,6 +432,159 @@ static int do_serve(const char *password, int verbose)
 	return 0;
 }
 
+/* lat [SERVICE]: list the LAT services, or a terminal session to one */
+static int lat_sid = -1, lat_up, lat_down, lat_reason;
+
+static void lat_send(void *ctx, const unsigned char *dst, const unsigned char *payload,
+                     unsigned len)
+{
+	(void)ctx;
+	dnenv_send(LAT_ETHERTYPE, dst, payload, len);
+}
+
+static void lat_data(void *ctx, int sid, const unsigned char *buf, unsigned len)
+{
+	(void)ctx;
+	(void)sid;
+	if (write(1, buf, len) < 0)
+		return;
+}
+
+static void lat_event(void *ctx, int sid, int ev, int reason)
+{
+	(void)ctx;
+	if (sid != lat_sid)
+		return;
+	if (ev == LAT_EV_UP)
+		lat_up = 1;
+	else {
+		lat_down = 1;
+		lat_reason = reason;
+	}
+}
+
+static void lat_logmsg(void *ctx, const char *msg)
+{
+	(void)ctx;
+	fprintf(stderr, "[lat: %s]\r\n", msg);
+}
+
+static void lat_start(int verbose)
+{
+	struct lat_env e;
+
+	memset(&e, 0, sizeof e);
+	e.send_frame = lat_send;
+	e.data = lat_data;
+	e.event = lat_event;
+	e.log = lat_logmsg;
+	e.verbose = verbose;
+	dnenv_mac(e.mac);
+	strcpy(e.node, "DNTOOL");
+	strcpy(e.ident, "dntool LAT test (Linux)");
+	lat_init(&e, (unsigned)time(NULL));
+	dnenv_other(LAT_ETHERTYPE, lat_input);
+}
+
+/* run the event loop for ms milliseconds (or until *flag) */
+static void lat_wait(long ms, const int *flag)
+{
+	double t0 = now(), t = t0;
+
+	while ((now() - t0) * 1000 < ms && !(flag && *flag) && !dnenv_stopped()) {
+		dnenv_pump(10);
+		lat_tick((unsigned)((now() - t) * 1000));
+		t = now();
+	}
+}
+
+static int do_lat_list(int verbose, int secs)
+{
+	const struct lat_service *v;
+	int i;
+
+	lat_start(verbose);
+	fprintf(stderr, "listening %d s for service announcements...\n", secs);
+	lat_wait(secs * 1000L, NULL);
+	for (i = 0; (v = lat_service(i)) != NULL; i++)
+		printf("%-16s %-16s %3d  %02x-%02x-%02x-%02x-%02x-%02x  %s\n", v->name, v->node,
+		       v->rating, v->mac[0], v->mac[1], v->mac[2], v->mac[3], v->mac[4],
+		       v->mac[5], v->ident);
+	return i ? 0 : 1;
+}
+
+static int do_lat(const char *service, int verbose)
+{
+	struct termios old, raw;
+	int tty = isatty(0), rc = 0, found = 0;
+	double t0;
+
+	lat_start(verbose);
+	/* the services are known once their nodes have announced them */
+	t0 = now();
+	while (!lat_find_service(service) && now() - t0 < 70 && !dnenv_stopped()) {
+		if (!found++)
+			fprintf(stderr, "waiting for an announcement of %s...\n", service);
+		lat_wait(500, NULL);
+	}
+	lat_sid = lat_connect(service, "dntool");
+	if (lat_sid < 0) {
+		fprintf(stderr, "%s: %s\n", service, lat_reason_text(-lat_sid));
+		return 1;
+	}
+	lat_wait(10000, &lat_up);
+	if (!lat_up) {
+		fprintf(stderr, "%s: %s\n", service,
+		        lat_down ? lat_reason_text(lat_reason) : "no answer");
+		lat_disconnect(lat_sid);
+		return 1;
+	}
+	if (tty) {
+		tcgetattr(0, &old);
+		raw = old;
+		raw.c_iflag &= ~(BRKINT | INLCR | ICRNL | IXON);
+		raw.c_iflag |= IGNBRK;
+		raw.c_oflag &= ~OPOST;
+		raw.c_lflag &= ~(ICANON | ISIG | ECHO | ECHONL | IEXTEN);
+		raw.c_cc[VMIN] = 1;
+		raw.c_cc[VTIME] = 0;
+		tcsetattr(0, TCSANOW, &raw);
+	}
+	fprintf(stderr, "Connected to %s. Escape character is '^]'.\r\n", service);
+	while (!lat_down && !dnenv_stopped()) {
+		struct pollfd pfd = { 0, POLLIN, 0 };
+		double t = now();
+
+		dnenv_pump(10);
+		if (lat_room(lat_sid) >= 256 && poll(&pfd, 1, 0) > 0) {
+			unsigned char kb[256];
+			long k = read(0, kb, sizeof kb), i;
+
+			if (k <= 0)
+				break;
+			for (i = 0; i < k && kb[i] != 0x1d; i++)
+				;
+			if (i)
+				lat_write(lat_sid, kb, (unsigned)i);
+			if (i < k)
+				break;  /* Ctrl-] */
+		}
+		lat_tick((unsigned)((now() - t) * 1000));
+	}
+	if (tty)
+		tcsetattr(0, TCSANOW, &old);
+	if (!lat_down) {
+		lat_disconnect(lat_sid);
+		lat_wait(2000, &lat_down);
+		fprintf(stderr, "\r\nSession closed.\n");
+	} else {
+		fprintf(stderr, "\r\nSession ended: %s.\n", lat_reason_text(lat_reason));
+		rc = lat_reason == LAT_R_LOST || lat_reason == LAT_R_CIRCUIT;
+	}
+	lat_wait(500, NULL);            /* the circuit stop goes out */
+	return rc;
+}
+
 static double now(void)
 {
 	struct timespec ts;
@@ -443,7 +597,8 @@ static void usage(const char *prog)
 {
 	fprintf(stderr, "usage: %s [-a area.node] [-i iface] [-v] [-u user] [-p password] [-n] [-t termtype]\n"
 	        "          dir NODE SPEC | get NODE SPEC [LOCALFILE] | nodes NODE [permanent]\n"
-	        "          put NODE LOCALFILE [SPEC] | task NODE NAME | login NODE | serve\n", prog);
+	        "          put NODE LOCALFILE [SPEC] | task NODE NAME | login NODE | serve\n"
+	        "          lat [SERVICE]\n", prog);
 	exit(1);
 }
 
@@ -473,6 +628,14 @@ int main(int argc, char **argv)
 		if (dnenv_open(ifname, addr, verbose))
 			return 1;
 		rc = do_serve(pass, verbose);
+		dnenv_close();
+		return rc;
+	}
+	if (argc - optind >= 1 && !strcmp(argv[optind], "lat")) {
+		if (dnenv_open(ifname, addr, verbose))
+			return 1;
+		rc = argc - optind > 1 ? do_lat(argv[optind + 1], verbose)
+		                       : do_lat_list(verbose, 25);
 		dnenv_close();
 		return rc;
 	}
