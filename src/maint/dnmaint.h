@@ -61,6 +61,22 @@ struct msession {
 	BOOL            shell_gone;     /* the Shell has ended (handles 0) */
 	BOOL            shell_failed;   /* Execute() could not start it */
 	BOOL            launcher;       /* the process calling Execute() runs */
+
+	/* the terminal's cursor, followed from our output (console.c) */
+	int             cx, cy;         /* cx == width: wrap pending */
+	int             tstate;         /* escape sequence state */
+	int             tpar[2], tnpar;
+
+	/* line editor for cooked reads (edit.c) */
+	char            ed_buf[CTERMH_MAXLINE + 1];
+	char            ed_save[CTERMH_MAXLINE + 1]; /* line before history */
+	int             ed_len, ed_pos;
+	int             ed_startx;      /* column where the line starts */
+	BOOL            ed_active;      /* a line is being typed */
+	int             ed_hpos;        /* history entry shown, hist_n: none */
+	int             ed_esc;         /* key escape sequence state */
+	char            ed_seq[8];
+	int             ed_seqlen;
 };
 
 /* dnmaint.c */
@@ -89,5 +105,11 @@ int  con_input(struct msession *s, const char *buf, long n, int term);
 void con_interrupt(struct msession *s, int ch);
 void con_stop(struct msession *s);
 int  shell_start(struct msession *s);
+void con_out(struct msession *s, const char *buf, long n);
+int  con_width(struct msession *s);
+
+/* edit.c: line editing and history for cooked reads */
+void ed_init(struct msession *s);
+void ed_keys(struct msession *s, const char *buf, long n);
 
 #endif

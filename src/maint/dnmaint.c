@@ -37,7 +37,7 @@
 #include "../amiga/dnmsg.h"
 #include "dnmaint.h"
 
-static const char version[] = "$VER: dnmaint 0.2 (24.10.2026)";
+static const char version[] = "$VER: dnmaint 0.3 (25.10.2026)";
 
 #define MAINT_PORTNAME "DECnet-Maint"
 

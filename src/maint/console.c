@@ -2,11 +2,14 @@
  * console.c - DOS console handler between the Shell and the session.
  *
  * The Shell gets our port as its console: ACTION_READ is served from
- * CTERM reads (line reads in cooked mode, char reads in raw mode),
- * ACTION_WRITE goes out through ctermh_write. Translations: LF -> CR LF
- * out, CR -> LF in (cooked mode), CSI 0x9B <-> ESC [, form feed ->
- * ESC [H ESC [2J out. ACTION_DISK_INFO hands out a ConUnit with the
- * terminal size (More sizes its pages with it).
+ * CTERM character reads; in cooked mode the keys go through our own
+ * line editor with history (edit.c), as the Amiga console has one and
+ * the terminal side's editing differs from node to node. ACTION_WRITE
+ * goes out through ctermh_write. Translations: LF -> CR LF out,
+ * CSI 0x9B <-> ESC [, form feed -> ESC [H ESC [2J out.
+ * ACTION_DISK_INFO hands out a ConUnit with the terminal size and the
+ * cursor position, which we follow from our output (More 44.3 pages
+ * by cu_YCP).
  *
  * The session waits on conport's signal and hands every message to
  * con_packet() (the DosPacket is in mn_Node.ln_Name); the line typed
@@ -52,6 +55,9 @@ int con_start(struct msession *s)
 	s->inlen = s->inpos = 0;
 	s->handles = 0;
 	s->shell_gone = FALSE;
+	s->cx = s->cy = 0;
+	s->tstate = 0;
+	ed_init(s);
 	return 0;
 }
 
@@ -88,7 +94,125 @@ static void con_serve(struct msession *s)
 		return;
 	}
 	if (!s->cth.read_pending)
-		ctermh_read(&s->cth, s->raw ? CTH_CHAR : CTH_LINE, NULL, 0, NULL, 0);
+		ctermh_read(&s->cth, CTH_CHAR, NULL, 0, NULL, 0);
+}
+
+int con_width(struct msession *s)
+{
+	return s->cth.width > 0 ? s->cth.width : 80;
+}
+
+static int con_height(struct msession *s)
+{
+	return s->cth.height > 0 ? s->cth.height : 24;
+}
+
+/* size and cursor into our ConUnit */
+static void cu_sync(struct msession *s)
+{
+	int w = con_width(s);
+
+	fake_cu.cu_XMax = w - 1;
+	fake_cu.cu_YMax = con_height(s) - 1;
+	fake_cu.cu_XCP = s->cx >= w ? w - 1 : s->cx;
+	fake_cu.cu_YCP = s->cy;
+}
+
+/* a cursor control sequence ESC [ p0;p1 c on the cursor */
+static void track_csi(struct msession *s, int c)
+{
+	int w = con_width(s), h = con_height(s);
+	int n = s->tpar[0] > 0 ? s->tpar[0] : 1;
+
+	if (s->cx >= w)
+		s->cx = w - 1;
+	switch (c) {
+	case 'A':
+		s->cy = s->cy > n ? s->cy - n : 0;
+		break;
+	case 'B':
+		s->cy = s->cy + n < h ? s->cy + n : h - 1;
+		break;
+	case 'C':
+		s->cx = s->cx + n < w ? s->cx + n : w - 1;
+		break;
+	case 'D':
+		s->cx = s->cx > n ? s->cx - n : 0;
+		break;
+	case 'H':
+	case 'f':
+		s->cy = n <= h ? n - 1 : h - 1;
+		n = s->tpar[1] > 0 ? s->tpar[1] : 1;
+		s->cx = n <= w ? n - 1 : w - 1;
+		break;
+	}
+}
+
+/* follow the terminal's cursor through what we send it, by VT100 rules:
+   a character in the last column leaves the cursor there until the
+   next one wraps; at the bottom, line feeds scroll */
+static void track(struct msession *s, const char *buf, long n)
+{
+	int w = con_width(s), h = con_height(s);
+	unsigned char c;
+	long i;
+
+	for (i = 0; i < n; i++) {
+		c = (unsigned char)buf[i];
+		if (s->tstate == 1) {           /* after ESC */
+			s->tstate = c == '[' ? 2 : 0;
+			s->tpar[0] = s->tpar[1] = 0;
+			s->tnpar = 0;
+			continue;
+		}
+		if (s->tstate == 2) {           /* in ESC [ */
+			if (c >= '0' && c <= '9') {
+				if (s->tnpar < 2)
+					s->tpar[s->tnpar] = s->tpar[s->tnpar] * 10 + c - '0';
+			} else if (c == ';') {
+				s->tnpar++;
+			} else if (c < 0x20 || c > 0x3f) {
+				s->tstate = 0;
+				track_csi(s, c);
+			}
+			continue;
+		}
+		if (c == ESC) {
+			s->tstate = 1;
+		} else if (c == '\r') {
+			s->cx = 0;
+		} else if (c == '\n') {        /* goes out as CR LF */
+			s->cx = 0;
+			if (s->cy < h - 1)
+				s->cy++;
+		} else if (c == '\b') {
+			if (s->cx >= w)
+				s->cx = w - 1;
+			if (s->cx > 0)
+				s->cx--;
+		} else if (c == '\t') {
+			s->cx = (s->cx / 8 + 1) * 8;
+			if (s->cx > w - 1)
+				s->cx = w - 1;
+		} else if (c >= 0x20 && c != 0x7f && (c < 0x80 || c >= 0xa0)) {
+			if (s->cx >= w) {
+				s->cx = 0;
+				if (s->cy < h - 1)
+					s->cy++;
+			}
+			s->cx++;
+		}
+	}
+}
+
+/* everything for the terminal goes out here */
+void con_out(struct msession *s, const char *buf, long n)
+{
+	if (s->state == MS_DONE || n <= 0)
+		return;
+	track(s, buf, n);
+	cu_sync(s);
+	ctermh_write(&s->cth, buf, n);
 }
 
 /* append a decimal number */
@@ -107,7 +231,7 @@ static int put_num(char *p, int v)
 
 /* Window Status Request (CSI 0 q, used by More and others): answer
    like the Amiga console, CSI 1;1;rows;columns r, with the size the
-   terminal reported */
+   terminal reported; straight to the Shell, not through the editor */
 static void con_report(struct msession *s)
 {
 	char r[32];
@@ -118,51 +242,60 @@ static void con_report(struct msession *s)
 	r[n++] = ';';
 	r[n++] = '1';
 	r[n++] = ';';
-	n += put_num(r + n, s->cth.height > 0 ? s->cth.height : 24);
+	n += put_num(r + n, con_height(s));
 	r[n++] = ';';
-	n += put_num(r + n, s->cth.width > 0 ? s->cth.width : 80);
+	n += put_num(r + n, con_width(s));
 	r[n++] = ' ';
 	r[n++] = 'r';
-	con_input(s, r, n, 0);
+	if (s->inpos > 0) {
+		memmove(s->inbuf, s->inbuf + s->inpos, s->inlen - s->inpos);
+		s->inlen -= s->inpos;
+		s->inpos = 0;
+	}
+	if (s->inlen + n <= (long)sizeof s->inbuf) {
+		memcpy(s->inbuf + s->inlen, r, n);
+		s->inlen += n;
+	}
+	con_serve(s);
 }
 
-/* output from the Shell: CSI becomes ESC [, form feed home + erase,
-   LF -> CR LF in ctermh; a Window Status Request is answered here, not
-   passed on */
+/* output from the Shell: CSI becomes ESC [, form feed home + erase; a
+   Window Status Request is answered here, not passed on. Collected,
+   so that one Write() goes out in as few WRITE messages as fit */
 static void con_write(struct msession *s, const UBYTE *buf, long n)
 {
-	long i, from = 0, k;
+	char out[256];
+	long i, o = 0, k;
 
-	if (s->state == MS_DONE)
-		return;
 	for (i = 0; i < n; i++) {
+		if (o > (long)sizeof out - 8) {
+			con_out(s, out, o);
+			o = 0;
+		}
 		if (buf[i] == '\f') {
 			/* clears the Amiga console; on a VT: home, erase */
-			if (i > from)
-				ctermh_write(&s->cth, (const char *)buf + from, i - from);
-			ctermh_write(&s->cth, "\033[H\033[2J", 7);
-			from = i + 1;
+			memcpy(out + o, "\033[H\033[2J", 7);
+			o += 7;
 			continue;
 		}
 		if (buf[i] == CSI)
 			k = i + 1;
 		else if (buf[i] == ESC && i + 1 < n && buf[i + 1] == '[')
 			k = i + 2;
-		else
+		else {
+			out[o++] = (char)buf[i];
 			continue;
-		if (i > from)
-			ctermh_write(&s->cth, (const char *)buf + from, i - from);
+		}
 		if (k + 2 < n && buf[k] == '0' && buf[k + 1] == ' ' && buf[k + 2] == 'q') {
 			con_report(s);
-			i = k + 2;              /* the loop goes on after it */
-		} else {
-			ctermh_write(&s->cth, "\033[", 2);
-			i = k - 1;
+			i = k + 2;
+			continue;
 		}
-		from = i + 1;
+		out[o++] = ESC;
+		out[o++] = '[';
+		i = k - 1;
 	}
-	if (n > from)
-		ctermh_write(&s->cth, (const char *)buf + from, n - from);
+	con_out(s, out, o);
 }
 
 /* one packet from the Shell (FINDINPUT/OUTPUT, READ, WRITE,
@@ -212,14 +345,9 @@ void con_packet(struct msession *s, struct DosPacket *dp)
 		ReplyPkt(dp, dp->dp_Arg3, 0);
 		break;
 	case ACTION_SCREEN_MODE:
-		/* DOSTRUE: raw (every key at once), 0: cooked (lines) */
-		if ((dp->dp_Arg1 != 0) != s->raw) {
-			s->raw = dp->dp_Arg1 != 0;
-			/* a read of the old kind gives back what was typed so
-			   far (con_input, term 0); the next one is of the new */
-			if (s->cth.read_pending)
-				ctermh_unread(&s->cth);
-		}
+		/* DOSTRUE: raw (every key at once), 0: cooked (lines).
+		   Both read single keys, so a pending read stays */
+		s->raw = dp->dp_Arg1 != 0;
 		ReplyPkt(dp, DOSTRUE, 0);
 		break;
 	case ACTION_WAIT_CHAR:
@@ -229,7 +357,7 @@ void con_packet(struct msession *s, struct DosPacket *dp)
 			break;
 		}
 		if (s->state != MS_DONE && !s->cth.read_pending)
-			ctermh_read(&s->cth, s->raw ? CTH_CHAR : CTH_LINE, NULL, 0, NULL, 0);
+			ctermh_read(&s->cth, CTH_CHAR, NULL, 0, NULL, 0);
 		ReplyPkt(dp, DOSFALSE, 0);
 		break;
 	case ACTION_CHANGE_SIGNAL:
@@ -248,8 +376,7 @@ void con_packet(struct msession *s, struct DosPacket *dp)
 		id->id_DiskType = ID_CON;
 		memset(&fake_cu, 0, sizeof fake_cu);
 		memset(&fake_io, 0, sizeof fake_io);
-		fake_cu.cu_XMax = (s->cth.width > 0 ? s->cth.width : 80) - 1;
-		fake_cu.cu_YMax = (s->cth.height > 0 ? s->cth.height : 24) - 1;
+		cu_sync(s);
 		fake_cu.cu_XRSize = fake_cu.cu_YRSize = 8;
 		fake_cu.cu_XRExtant = (fake_cu.cu_XMax + 1) * 8 - 1;
 		fake_cu.cu_YRExtant = (fake_cu.cu_YMax + 1) * 8 - 1;
@@ -269,46 +396,40 @@ void con_packet(struct msession *s, struct DosPacket *dp)
 	}
 }
 
-/* input from the terminal for the Shell: the keys or the line without
-   its terminator, and the terminator (0: none, after char reads and
-   ctermh_unread). Appends to inbuf; <0: no room, the rest is lost. */
+/* keys from the terminal (character reads, term 0). Raw mode: to the
+   Shell as they are, ESC [ as CSI like the Amiga console sends it;
+   cooked mode: to the line editor, which hands over whole lines.
+   Appends to inbuf; <0: no room, the rest is lost. */
 int con_input(struct msession *s, const char *buf, long n, int term)
 {
 	long room, i;
 	int rc = 0;
 	char c;
 
-	/* make room at the end */
-	if (s->inpos > 0) {
+	(void)term;
+	if (s->inpos > 0) {             /* make room at the end */
 		memmove(s->inbuf, s->inbuf + s->inpos, s->inlen - s->inpos);
 		s->inlen -= s->inpos;
 		s->inpos = 0;
 	}
+	if (!s->raw) {
+		ed_keys(s, buf, n);
+		con_serve(s);
+		return 0;
+	}
 	room = sizeof s->inbuf - s->inlen;
 	for (i = 0; i < n; i++) {
 		c = buf[i];
-		if (s->raw) {
-			/* the Amiga console sends CSI where VT100 sends ESC [ */
-			if (c == '[' && s->inlen > 0 && s->inbuf[s->inlen - 1] == ESC) {
-				s->inbuf[s->inlen - 1] = (char)CSI;
-				continue;
-			}
-		} else if (c == '\r')
-			c = '\n';
+		if (c == '[' && s->inlen > 0 && s->inbuf[s->inlen - 1] == ESC) {
+			s->inbuf[s->inlen - 1] = (char)CSI;
+			continue;
+		}
 		if (room == 0) {
 			rc = -1;
 			break;
 		}
 		s->inbuf[s->inlen++] = c;
 		room--;
-	}
-	if (term == 0x1c)               /* Ctrl-\: end of file, as on CON: */
-		s->eof = TRUE;
-	else if (term) {
-		if (room > 0)
-			s->inbuf[s->inlen++] = s->raw ? '\r' : '\n';
-		else
-			rc = -1;
 	}
 	con_serve(s);
 	return rc;
@@ -455,8 +576,12 @@ int shell_start(struct msession *s)
 	launch_in = in;
 	launch_parent = FindTask(NULL);
 	s->launcher = TRUE;
+	/* NP_Cli: the launcher gets a copy of our CLI's command path
+	   (Run from DECnet-Start: the one of the boot scripts), which
+	   Execute() hands on to the Shell; without, it has only C: */
 	if (!CreateNewProcTags(NP_Entry, (ULONG)launcher,
 	                       NP_Name, (ULONG)"dnmaint launcher",
+	                       NP_Cli, TRUE,
 	                       NP_StackSize, 8192,
 	                       NP_WindowPtr, -1,
 	                       TAG_DONE))

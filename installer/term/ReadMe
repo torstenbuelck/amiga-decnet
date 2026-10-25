@@ -156,7 +156,14 @@ On the allowed node, log in like to any CTERM host:
 
 and type the password. "endcli" ends the Shell and the connection.
 Ctrl-C and Ctrl-Y stop the running command. The Shell starts in SYS:
-and runs S:Shell-Startup first.
+with the command path of the boot scripts and runs S:Shell-Startup
+first.
+
+The Amiga edits the line itself, as in a Shell window: cursor
+left/right, Backspace, Delete, Home/End (also Ctrl-A/Ctrl-E), Ctrl-X
+erases the line, Ctrl-K the rest of it. Cursor up/down go through the
+last 20 lines typed in this session. The terminal should be a VT100 or
+compatible.
 
 dnmaint starts with DECnet (DECnet-Start runs
 DECnet:S/DECnet-Start-Term) and writes what happens to T:dnmaint.log:
