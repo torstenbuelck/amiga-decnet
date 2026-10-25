@@ -174,15 +174,17 @@ can be done that you can do at this Amiga's keyboard: read, change and
 delete every file, start any program. Enable it only if you need it,
 and only for a node you trust.
 
-- Only one node may connect; it is asked during the installation. A
-  connect from any other node is refused before anything is asked.
+- Only one DECnet node may connect; it is asked during the
+  installation. A connect from any other node is refused before
+  anything is asked. Over LAT, the terminal servers you name (see
+  below).
 - After the connect comes "Password:" (no echo). Three wrong answers
   end the connection, each after a pause.
 - The password is stored as plain text in ENVARC:DECnet/maint-password
   (and ENV:DECnet/maint-password while the Amiga runs). Every program
   on this Amiga can read it.
-- DECnet does not encrypt: the password and the whole session cross
-  the network in clear text, readable by anyone who can watch it.
+- DECnet and LAT do not encrypt: the password and the whole session
+  cross the network in clear text, readable by anyone who can watch it.
 - Never use a password you use anywhere else.
 
 On the allowed node, log in like to any CTERM host:
@@ -201,11 +203,28 @@ erases the line, Ctrl-K the rest of it. Cursor up/down go through the
 last 20 lines typed in this session. The terminal should be a VT100 or
 compatible.
 
+Over LAT: the installation also asks for LAT terminal servers (by
+their LAT node names, e.g. VAX1 TSERV2). If you name any, the login is
+offered as a LAT service named like this Amiga (ENV:DECnet/Name), as
+long as latd runs. On a VMS node in the list:
+
+  $ SET HOST/LAT MYAMI         (MYAMI being this Amiga's name)
+
+and on a terminal server its connect command for that service. Terminal
+servers not in the list are refused before anything is asked. The
+same password is asked, and the session works as over CTERM.
+
+LAT has no addresses: anyone on your LAN can give a terminal server
+any name, so the list keeps chance visitors out, not someone who sets
+out to get in; the password does that. All terminal servers that see
+the LAN see the service. Leave the list empty if you do not need LAT.
+
 dnmaint starts with DECnet (DECnet-Start runs
 DECnet:S/DECnet-Start-Term) and writes what happens to T:dnmaint.log:
-every connect with the node address, and whether it was accepted. "dnmaint STOP" ends it until the
-next boot. To change the node or the password, or to switch the login
-off for good, run Install-DECnet-Term again.
+every connect with the node address (over LAT: node and port name),
+and whether it was accepted. "dnmaint STOP" ends it until the next
+boot. To change the nodes or the password, or to switch the login off
+for good, run Install-DECnet-Term again.
 
 Programs that draw on the screen through the console (such as More)
 work; programs that open windows of their own show them on the
@@ -216,10 +235,11 @@ Tested
 ------
 Term 4.8 and VAXterm 2.4 on AmigaOS 3.1 (Amiberry), with OpenVMS 7.2
 hosts: login, DCL, EVE and MONITOR. dnterm.device also on AmigaOS 2.04
-with a 68000. LAT on AmigaOS 3.5 (Amiberry) with OpenVMS 7.2. The
-maintenance login on AmigaOS 2.04 and 3.5 (Amiberry) and on an A3000
-with AmigaOS 3.5, from OpenVMS 7.2 (SET HOST) and from Linux (dntool
-login). Reports with other terminal programs and hosts are welcome.
+with a 68000. LAT on AmigaOS 3.5 (Amiberry and an A3000) with OpenVMS
+7.2. The maintenance login on AmigaOS 2.04 and 3.5 (Amiberry) and on an
+A3000 with AmigaOS 3.5, from OpenVMS 7.2 (SET HOST) and from Linux
+(dntool login); over LAT on AmigaOS 3.5 (Amiberry) from OpenVMS 7.2
+(SET HOST/LAT). Reports with other terminal programs and hosts are welcome.
 
 
 Licence

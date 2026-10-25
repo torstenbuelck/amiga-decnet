@@ -41,7 +41,7 @@
 #include "lat.h"
 #include "latmsg.h"
 
-static const char version[] = "$VER: latd 0.1 (25.10.2026)";
+static const char version[] = "$VER: latd 0.2 (25.10.2026)";
 
 #define TICK_US     40000       /* LAT core clock */
 #define FRAMEBUF    1600
@@ -853,11 +853,8 @@ int main(void)
 	mlog(dnetd_gone ? "latd: DECnet stopped, ending\n" : "latd: stopping\n");
 
 out:
-	if (pubport && pubport->mp_Node.ln_Name) {
-		Forbid();
-		RemPort(pubport);
-		Permit();
-	}
+	/* the public port goes last: "latd STOP" waits for it, and a new
+	   latd must find dnetd's tap free once it is gone */
 	if (stopping) {
 		/* end the sessions properly while dnetd is still there */
 		for (i = 0; i < MAXCL; i++)
@@ -870,9 +867,6 @@ out:
 		if (!dnetd_gone)
 			lat_shutdown();
 	}
-	if (pubport)
-		while ((m = (struct DnMsg *)GetMsg(pubport)) != NULL)
-			reply(m, -1, LAT_R_USER);
 	if (paccept)
 		reply(paccept, -1, LAT_R_USER);
 	paccept = NULL;
@@ -907,6 +901,14 @@ out:
 		wmsg.dm_Link = tap;
 		transact(&wmsg);
 	}
+	if (pubport && pubport->mp_Node.ln_Name) {
+		Forbid();
+		RemPort(pubport);
+		Permit();
+	}
+	if (pubport)
+		while ((m = (struct DnMsg *)GetMsg(pubport)) != NULL)
+			reply(m, -1, LAT_R_USER);
 	if (tpending) {
 		AbortIO((struct IORequest *)treq);
 		WaitIO((struct IORequest *)treq);

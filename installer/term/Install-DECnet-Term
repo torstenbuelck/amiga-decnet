@@ -1,4 +1,4 @@
-; $VER: Install-DECnet-Term 0.4 (25.10.2026)
+; $VER: Install-DECnet-Term 0.5 (25.10.2026)
 ;
 ; Installer script for DECnet-Term, the terminal add-on of the Amiga
 ; DECnet endnode: dnterm.device (CTERM and LAT terminal sessions to other
@@ -15,12 +15,13 @@
 ; and with the maintenance login:
 ;   DECnet:C/dnmaint              the maintenance login service
 ;   ENVARC:DECnet/maint-node      the node allowed to log in
+;   ENVARC:DECnet/maint-latnodes  LAT terminal servers allowed (optional)
 ;   ENVARC:DECnet/maint-password  its password (plain text)
 ;
 ; Copyright (C) 2026  Torsten Bülck (tuti)
 ; SPDX-License-Identifier: GPL-2.0-or-later
 
-(set #version "0.4")
+(set #version "0.5")
 (set @app-name "DECnet-Term")
 
 (if (< (/ (getversion) 65536) 37)
@@ -60,8 +61,10 @@
 	)
 	(delete "DECnet:C/dnmaint" (optional "force") (prompt "") (help ""))
 	(delete "ENVARC:DECnet/maint-node" (optional "force") (prompt "") (help ""))
+	(delete "ENVARC:DECnet/maint-latnodes" (optional "force") (prompt "") (help ""))
 	(delete "ENVARC:DECnet/maint-password" (optional "force") (prompt "") (help ""))
 	(delete "ENV:DECnet/maint-node" (optional "force") (prompt "") (help ""))
+	(delete "ENV:DECnet/maint-latnodes" (optional "force") (prompt "") (help ""))
 	(delete "ENV:DECnet/maint-password" (optional "force") (prompt "") (help ""))
 )
 
@@ -95,6 +98,33 @@
 		)
 	)
 
+	; ---- LAT terminal servers allowed as well (none: no LAT); a default
+	; only when updating
+	(set #lat "")
+	(if #maint-was-on (set #lat (getenv "DECnet/maint-latnodes")))
+	(set #lat-ok 0)
+	(while (NOT #lat-ok)
+		(set #lat (askstring
+			(prompt "Also over LAT from which terminal servers?\n\n"
+			        "LAT node names of the terminal servers (or VMS nodes, "
+			        "SET HOST/LAT) allowed to use the maintenance login, "
+			        "separated by blanks. Leave it empty for no LAT.")
+			(help "The login is then offered as LAT service named like this "
+			      "Amiga (ENV:DECnet/Name). Only the nodes you name here get the "
+			      "password prompt.\n\n"
+			      "LAT knows no addresses: a node name can be forged by anyone "
+			      "on your LAN, and the password crosses it in clear text.\n\n"
+			      @askstring-help)
+			(default #lat)
+		))
+		; letters, digits and $ _ . - in names, blanks or commas between
+		(if (OR (= #lat "") (patmatch "#[-A-Za-z0-9$_., ]" #lat))
+			(set #lat-ok 1)
+			(message "\"" #lat "\" is not a list of LAT node names (letters, "
+			         "digits, $ _ . -, separated by blanks).")
+		)
+	)
+
 	; ---- the password
 	(set #pw "")
 	(set #pw-ok 0)
@@ -124,6 +154,11 @@
 	(makedir "ENVARC:DECnet" (prompt "") (help ""))
 	(makedir "ENV:DECnet" (prompt "") (help ""))
 	(set #var "maint-node") (set #val #addr) (P_SAVEVAR)
+	(delete "ENVARC:DECnet/maint-latnodes" (optional "force") (prompt "") (help ""))
+	(delete "ENV:DECnet/maint-latnodes" (optional "force") (prompt "") (help ""))
+	(if (<> #lat "")
+		((set #var "maint-latnodes") (set #val #lat) (P_SAVEVAR))
+	)
 	(if (<> #pw "")
 		((set #var "maint-password") (set #val #pw) (P_SAVEVAR))
 	)
@@ -143,8 +178,9 @@
 			)
 		)
 	)
-	(set #maint-text (cat "\n\nThe maintenance login is enabled for " #addr ". "
-	                      "Read \"Maintenance login\" in the ReadMe."))
+	(set #maint-text (cat "\n\nThe maintenance login is enabled for " #addr
+	                      (if (<> #lat "") (cat " and over LAT for " #lat) "")
+	                      ". Read \"Maintenance login\" in the ReadMe."))
 )
 
 (procedure P_MAINT
