@@ -77,6 +77,7 @@ static UBYTE rframe[FRAMEBUF], wframe[FRAMEBUF];
 static struct client *cls;       /* MAXCL of them, large: allocated */
 static ULONG generation, now;
 static const char *logfile;
+static int verbose;
 
 static void mlog(const char *fmt, ...)
 {
@@ -230,6 +231,9 @@ static void env_data(void *ctx, int sid, const unsigned char *buf, unsigned len)
 	ULONG pos, k;
 
 	(void)ctx;
+	if (verbose >= 2)
+		mlog("latd: %ld bytes for session %ld (%s)\n", (LONG)len, (LONG)sid,
+		     (STRPTR)(c ? (c->pread ? "read waiting" : "no read") : "no client"));
 	if (!c)
 		return;
 	if (len > RING - c->rcount) {
@@ -294,10 +298,18 @@ static struct client *find_client(ULONG id)
 /* start the session once the service is known; FALSE: not yet */
 static BOOL try_connect(struct client *c)
 {
+	char *w = c->want.lc_Service;
 	int sid;
 
-	if (!lat_find_service(c->want.lc_Service))
-		return FALSE;
+	if (!lat_find_service(w)) {
+		/* "ATDT HOWIE" from a phone book: the T (or P) is not part
+		   of the name */
+		if ((w[0] == 'T' || w[0] == 't' || w[0] == 'P' || w[0] == 'p') &&
+		    lat_find_service(w[1] == ' ' ? w + 2 : w + 1))
+			memmove(w, w[1] == ' ' ? w + 2 : w + 1, strlen(w) - (w[1] == ' ' ? 1 : 0));
+		else
+			return FALSE;
+	}
 	sid = lat_connect(c->want.lc_Service, c->want.lc_Port);
 	if (sid < 0) {
 		reply(c->pconnect, -1, -sid);
@@ -379,6 +391,9 @@ static void handle(struct DnMsg *m)
 		return;
 	}
 	c = find_client(m->dm_Link);
+	if (verbose >= 2)
+		mlog("latd: request %ld for %08lx%s, %ld bytes waiting\n", m->dm_Cmd, m->dm_Link,
+		     (STRPTR)(c ? "" : " (unknown)"), c ? (LONG)c->rcount : 0L);
 	if (!c) {
 		reply(m, -1, LAT_R_USER);
 		return;
@@ -615,7 +630,7 @@ int main(void)
 	env.data = env_data;
 	env.event = env_event;
 	env.log = env_log;
-	env.verbose = args[0] ? (int)*(LONG *)args[0] : 0;
+	env.verbose = verbose = args[0] ? (int)*(LONG *)args[0] : 0;
 	memcpy(env.mac, ti.dti_Address, 6);
 	node_name(env.node);
 	strcpy(env.ident, "Amiga DECnet-Term");

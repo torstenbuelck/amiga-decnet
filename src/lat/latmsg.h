@@ -8,7 +8,8 @@
  *   DNC_CONNECT  dm_Buf struct LatConnect, dm_Timeout (ms, 0: 30 s)
  *                -> dm_Link session, or dm_Result -1 and dm_Reason (a LAT
  *                reason, see lat.h; LAT_R_NOSVC if the service was not
- *                announced within the timeout)
+ *                announced within the timeout). A leading T or P (from
+ *                ATDT/ATDP) is dropped if the name is unknown with it
  *   DNC_READ     dm_Buf/dm_Len/dm_Timeout -> dm_Result bytes of terminal
  *                output, DNR_TIMEOUT, or DNR_CLOSED with dm_Reason
  *   DNC_WRITE    dm_Buf/dm_Len keys -> 0, or -1 (session gone); waits

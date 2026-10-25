@@ -9,11 +9,17 @@
  * of silence before and after) returns to command mode, ATH hangs up,
  * ATO goes back online.
  *
+ * Units 4 to 7 do the same with LAT services instead: "ATD HOWIE" there
+ * opens a LAT session to the service HOWIE through latd (src/lat),
+ * which carries the terminal stream as it is; SDCMD_BREAK sends a
+ * BREAK.
+ *
  * Every unit has a process of its own: it serves the IORequests, talks
- * to dnetd and runs the CTERM client (src/cterm). It speaks dnetd's
- * private message protocol (dnmsg.h) directly, because decnet.library
- * only offers blocking calls and a terminal must read and write at the
- * same time; decnet.library is only used to look node names up.
+ * to dnetd (or latd) and runs the CTERM client (src/cterm). It speaks
+ * dnetd's private message protocol (dnmsg.h) directly, because
+ * decnet.library only offers blocking calls and a terminal must read
+ * and write at the same time; decnet.library is only used to look node
+ * names up. latd takes the same messages on its port "LAT".
  *
  * Built without C startup code; AmigaOS 2.04, 68000.
  *
@@ -38,13 +44,15 @@
 
 #include "../amiga/dnmsg.h"
 #include "../cterm/cterm.h"
+#include "../lat/latmsg.h"
 
 #define DEVNAME   "dnterm.device"
 #define VERSION   0
-#define REVISION  2
-#define IDSTRING  "dnterm.device 0.2 (24.10.2026)\r\n"
+#define REVISION  3
+#define IDSTRING  "dnterm.device 0.3 (25.10.2026)\r\n"
 
-#define NUNITS    4
+#define NUNITS    8
+#define LATUNIT   4             /* units from here on are LAT */
 #define RBUFSIZE  8192          /* data for the terminal program */
 #define NETBUF    2048          /* one NSP message from the host */
 #define TICK_MS   100
@@ -67,6 +75,7 @@ static const char idstring[] = IDSTRING;
 struct DtUnit {
 	struct Unit u;                  /* unit_MsgPort gets the IORequests */
 	int num;
+	int lat;                        /* a LAT unit: talks to latd */
 	int shared;                     /* opened with SERF_SHARED */
 	struct Process *proc;
 	struct Message *quit;           /* from the last CloseDevice */
@@ -97,6 +106,7 @@ struct DtUnit {
 	struct MsgPort *wport;          /* write and close replies */
 	struct DnMsg cmsg, rmsg, wmsg;
 	struct DnConnectReq creq;
+	struct LatConnect lconn;
 	ULONG link;
 	int read_out;                   /* rmsg is at dnetd */
 	struct Library *decnet;
@@ -244,7 +254,8 @@ static void result(struct DtUnit *u, int r);
 
 /* ---- dnetd -------------------------------------------------------------- */
 
-static int send_dnetd(struct DnMsg *m, struct MsgPort *reply)
+/* to dnetd, or to latd on a LAT unit */
+static int send_dnetd(struct DtUnit *u, struct DnMsg *m, struct MsgPort *reply)
 {
 	struct MsgPort *dn;
 
@@ -252,7 +263,7 @@ static int send_dnetd(struct DnMsg *m, struct MsgPort *reply)
 	m->dm_Msg.mn_ReplyPort = reply;
 	m->dm_Msg.mn_Length = sizeof(struct DnMsg);
 	Forbid();
-	dn = FindPort((STRPTR)DN_PORTNAME);
+	dn = FindPort((STRPTR)(u->lat ? LAT_PORTNAME : DN_PORTNAME));
 	if (dn)
 		PutMsg(dn, &m->dm_Msg);
 	Permit();
@@ -262,7 +273,7 @@ static int send_dnetd(struct DnMsg *m, struct MsgPort *reply)
 /* write and close wait for their reply; the read stays at dnetd */
 static int transact(struct DtUnit *u, struct DnMsg *m)
 {
-	if (!send_dnetd(m, u->wport))
+	if (!send_dnetd(u, m, u->wport))
 		return 0;
 	while (!GetMsg(u->wport))
 		WaitPort(u->wport);
@@ -278,7 +289,7 @@ static void issue_read(struct DtUnit *u)
 	u->rmsg.dm_Buf = u->net;
 	u->rmsg.dm_Len = NETBUF;
 	u->rmsg.dm_Timeout = 0;
-	u->read_out = send_dnetd(&u->rmsg, u->netport);
+	u->read_out = send_dnetd(u, &u->rmsg, u->netport);
 	if (!u->read_out) {
 		u->online = 0;                  /* dnetd is gone */
 		u->cmdmode = 1;
@@ -386,8 +397,28 @@ static void dial(struct DtUnit *u, const char *name)
 		return;
 	}
 	if (!*name) {
-		say(u, "No node given (ATD NODE)");
+		say(u, u->lat ? "No service given (ATD SERVICE)" : "No node given (ATD NODE)");
 		result(u, R_ERROR);
+		return;
+	}
+	if (u->lat) {
+		/* latd skips a T or P of ATDT/ATDP itself if needed */
+		memset(&u->lconn, 0, sizeof u->lconn);
+		strncpy(u->lconn.lc_Service, name, sizeof u->lconn.lc_Service - 1);
+		strcpy(u->lconn.lc_Port, "LAT0");
+		u->lconn.lc_Port[3] = '0' + u->num;
+		u->cmsg.dm_Cmd = DNC_CONNECT;
+		u->cmsg.dm_Buf = &u->lconn;
+		u->cmsg.dm_Req = NULL;
+		u->cmsg.dm_Timeout = 30000;
+		if (!send_dnetd(u, &u->cmsg, u->netport)) {
+			say(u, "LAT is not running (latd)");
+			result(u, R_NODIALTONE);
+			return;
+		}
+		u->dialing = 1;
+		u->connect_out = 1;
+		u->abandon = 0;
 		return;
 	}
 	if (!u->decnet)
@@ -419,7 +450,8 @@ static void dial(struct DtUnit *u, const char *name)
 	u->creq.dcr_Timeout = 30000;
 	u->cmsg.dm_Cmd = DNC_CONNECT;
 	u->cmsg.dm_Req = &u->creq;
-	if (!send_dnetd(&u->cmsg, u->netport)) {
+	u->cmsg.dm_Buf = NULL;
+	if (!send_dnetd(u, &u->cmsg, u->netport)) {
 		say(u, "DECnet is not running");
 		result(u, R_NODIALTONE);
 		return;
@@ -446,13 +478,30 @@ static void connect_done(struct DtUnit *u)
 		u->cmdmode = 0;
 		u->plus = 0;
 		u->last_data = u->ticks;
-		cterm_init(&u->ct);
+		if (!u->lat)
+			cterm_init(&u->ct);
 		result(u, R_CONNECT);
 		issue_read(u);
 		return;
 	}
 	if (abandon)
 		return;
+	if (u->lat) {
+		/* LAT reasons, see src/lat/lat.h */
+		switch (reason) {
+		case 6:  result(u, R_BUSY); return;         /* service in use */
+		case 32: result(u, R_NOANSWER); return;     /* node does not answer */
+		case 7:  why = "Unknown LAT service"; break;
+		case 8:  why = "Service is disabled"; break;
+		case 5:  why = "No resources"; break;
+		case 11:
+		case 14: why = "Access refused"; break;
+		}
+		if (why)
+			say(u, why);
+		result(u, R_NOCARRIER);
+		return;
+	}
 	switch (reason) {
 	case DNREASON_BUSY:        result(u, R_BUSY); return;
 	case DNREASON_TIMEOUT:     result(u, R_NOANSWER); return;
@@ -520,7 +569,7 @@ static void at_command(struct DtUnit *u, const char *s)
 			break;
 		case 'I':
 			number(&p);
-			say(u, "dnterm.device 0.2, DECnet CTERM");
+			say(u, u->lat ? "dnterm.device 0.3, LAT" : "dnterm.device 0.3, DECnet CTERM");
 			break;
 		case 'O':
 			number(&p);
@@ -598,12 +647,21 @@ static void cmd_char(struct DtUnit *u, char c)
 	}
 }
 
+/* keys for the host: through CTERM, or as they are to latd */
+static void keys(struct DtUnit *u, const char *buf, long n)
+{
+	if (u->lat)
+		net_write(u, (const unsigned char *)buf, n);
+	else
+		cterm_keys(&u->ct, buf, n);
+}
+
 static void flush_plus(struct DtUnit *u)
 {
 	static const char plus[] = "+++";
 
 	if (u->plus) {
-		cterm_keys(&u->ct, plus, u->plus);
+		keys(u, plus, u->plus);
 		u->plus = 0;
 		u->last_data = u->ticks;
 	}
@@ -621,7 +679,7 @@ static void data_chars(struct DtUnit *u, const char *buf, long n)
 			continue;
 		}
 		flush_plus(u);
-		cterm_keys(&u->ct, buf + i, 1);
+		keys(u, buf + i, 1);
 		u->last_data = u->ticks;
 	}
 }
@@ -638,7 +696,7 @@ static void tick(struct DtUnit *u)
 			flush_plus(u);
 		}
 	}
-	if (u->online)
+	if (u->online && !u->lat)
 		cterm_tick(&u->ct, TICK_MS);
 }
 
@@ -705,7 +763,14 @@ static void do_io(struct DtUnit *u, struct IOExtSer *io)
 			memcpy(u->term, &io->io_TermArray, 8);
 		}
 		break;
-	default:                        /* CMD_START, CMD_STOP, SDCMD_BREAK */
+	case SDCMD_BREAK:
+		if (u->lat && u->online) {
+			u->wmsg.dm_Cmd = LTC_BREAK;
+			u->wmsg.dm_Link = u->link;
+			transact(u, &u->wmsg);
+		}
+		break;
+	default:                        /* CMD_START, CMD_STOP */
 		break;
 	}
 	reply_io(r);
@@ -741,7 +806,10 @@ static void handle_net(struct DtUnit *u)
 			u->read_out = 0;
 			if (!u->online)
 				continue;
-			if (n > 0 && cterm_net(&u->ct, u->net, n) >= 0 && !u->ct.unbound) {
+			if (n > 0 && u->lat) {
+				put(u, (const char *)u->net, n);
+				issue_read(u);
+			} else if (n > 0 && cterm_net(&u->ct, u->net, n) >= 0 && !u->ct.unbound) {
 				issue_read(u);
 			} else if (n == DNR_TIMEOUT) {
 				issue_read(u);
@@ -913,6 +981,7 @@ static struct DtUnit *start_unit(int num)
 	if (!u)
 		return NULL;
 	u->num = num;
+	u->lat = num >= LATUNIT;
 	strcpy(u->procname, "dnterm.device unit 0");
 	n = u->procname + strlen(u->procname) - 1;
 	*n = '0' + num;
