@@ -12,6 +12,10 @@
  * the program takes it with DNC_ACCEPT and answers it with DNC_ANSWER;
  * meanwhile the core tells the remote with a connect ack.
  *
+ * Taps: DNC_TAPOPEN hands the frames of another ethertype (LAT) to one
+ * program, which reads them with DNC_TAPREAD (queued here, at most
+ * TAPQUEUE) and sends with DNC_TAPWRITE.
+ *
  * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
@@ -34,6 +38,8 @@
 #define MAXLISTEN 8
 #define MAXQUEUED 4
 #define ANSWER_TIME 30000UL
+#define MAXTAP 2
+#define TAPQUEUE 32
 
 struct qmsg {
 	struct qmsg *next;
@@ -69,7 +75,18 @@ struct lsn {
 	ULONG accept_deadline;
 };
 
+struct tap {
+	int used;
+	ULONG id;
+	UWORD type;
+	struct qmsg *head, *tail;
+	int queued;
+	struct DnMsg *pread;
+	ULONG read_deadline;
+};
+
 static struct MsgPort *pubport;
+static struct tap taps[MAXTAP];
 static struct srv srvs[MAXSRV];
 static struct lsn lsns[MAXLISTEN];
 static ULONG generation;
@@ -100,14 +117,19 @@ static struct lsn *find_lsn(ULONG id)
 	return n;
 }
 
-static void free_queue(struct srv *s)
+static void free_qmsgs(struct qmsg *q)
 {
-	struct qmsg *q, *n;
+	struct qmsg *n;
 
-	for (q = s->head; q; q = n) {
+	for (; q; q = n) {
 		n = q->next;
 		FreeVec(q);
 	}
+}
+
+static void free_queue(struct srv *s)
+{
+	free_qmsgs(s->head);
 	s->head = s->tail = NULL;
 }
 
@@ -462,11 +484,151 @@ static void do_answer(struct srv *s, struct DnMsg *m)
 	reply(m, 0, 0);
 }
 
+/* ---- taps ---------------------------------------------------------------------- */
+
+static struct tap *find_tap(ULONG id)
+{
+	struct tap *t = &taps[id & 0xff];
+
+	if ((id & 0xff) >= MAXTAP || !t->used || t->id != id)
+		return NULL;
+	return t;
+}
+
+static void serve_tap(struct tap *t)
+{
+	struct DnMsg *m = t->pread;
+	struct qmsg *q = t->head;
+	ULONG n;
+
+	if (!m || !q)
+		return;
+	t->head = q->next;
+	if (!t->head)
+		t->tail = NULL;
+	t->queued--;
+	n = q->len < (ULONG)m->dm_Len ? q->len : (ULONG)m->dm_Len;
+	CopyMem(q->data, m->dm_Buf, n);
+	FreeVec(q);
+	t->pread = NULL;
+	reply(m, (LONG)n, 0);
+}
+
+void srv_tap_input(const UBYTE *frame, ULONG len)
+{
+	UWORD type = (frame[12] << 8) | frame[13];
+	struct qmsg *q;
+	int i;
+
+	for (i = 0; i < MAXTAP; i++) {
+		struct tap *t = &taps[i];
+		if (!t->used || t->type != type || t->queued >= TAPQUEUE)
+			continue;
+		q = AllocVec(sizeof(struct qmsg) + len, MEMF_ANY);
+		if (!q)
+			return;
+		q->next = NULL;
+		q->len = len;
+		CopyMem((APTR)frame, q->data, len);
+		if (t->tail)
+			t->tail->next = q;
+		else
+			t->head = q;
+		t->tail = q;
+		t->queued++;
+		serve_tap(t);
+	}
+}
+
+static void do_tapopen(struct DnMsg *m)
+{
+	struct DnTapInfo *ti = m->dm_Buf;
+	struct tap *t = NULL;
+	int i;
+
+	for (i = 0; i < MAXTAP; i++) {
+		if (taps[i].used && taps[i].type == (UWORD)m->dm_Len) {
+			reply(m, -1, DNREASON_BUSY);
+			return;
+		}
+		if (!taps[i].used && !t)
+			t = &taps[i];
+	}
+	if (!t || !ti || dnetd_tap_enable((UWORD)m->dm_Len, ti->dti_Multicast)) {
+		reply(m, -1, DNREASON_RESOURCES);
+		return;
+	}
+	memset(t, 0, sizeof *t);
+	t->used = 1;
+	t->id = (ULONG)(t - taps) | (++generation << 8);
+	t->type = (UWORD)m->dm_Len;
+	memcpy(ti->dti_Address, dnetd_address(), 6);
+	m->dm_Id = t->id;
+	reply(m, 0, 0);
+}
+
+static void do_tapclose(struct tap *t)
+{
+	if (t->pread)
+		reply(t->pread, DNR_CLOSED, DNREASON_NOLINK);
+	free_qmsgs(t->head);
+	t->used = 0;
+}
+
+/* tap requests; FALSE: not one */
+static BOOL handle_tap(struct DnMsg *m)
+{
+	struct tap *t;
+
+	switch (m->dm_Cmd) {
+	case DNC_TAPOPEN:
+		do_tapopen(m);
+		return TRUE;
+	case DNC_TAPREAD:
+	case DNC_TAPWRITE:
+	case DNC_TAPCLOSE:
+		break;
+	default:
+		return FALSE;
+	}
+	t = find_tap(m->dm_Link);
+	if (!t) {
+		reply(m, -1, DNREASON_NOLINK);
+		return TRUE;
+	}
+	switch (m->dm_Cmd) {
+	case DNC_TAPREAD:
+		if (t->pread) {
+			reply(m, -1, DNREASON_RESOURCES);
+			break;
+		}
+		t->pread = m;
+		t->read_deadline = now + (m->dm_Timeout > 0 ? (ULONG)m->dm_Timeout : 0x7fffffffUL);
+		serve_tap(t);
+		break;
+	case DNC_TAPWRITE:
+		if (m->dm_Len < 6 || m->dm_Len > 1500 + 6) {
+			reply(m, -1, DNREASON_RESOURCES);
+			break;
+		}
+		dnetd_tap_send(m->dm_Buf, (const UBYTE *)m->dm_Buf + 6, (ULONG)m->dm_Len - 6);
+		reply(m, 0, 0);
+		break;
+	case DNC_TAPCLOSE:
+		do_tapclose(t);
+		reply(m, 0, 0);
+		break;
+	}
+	return TRUE;
+}
+
 static void handle(struct DnMsg *m)
 {
 	struct srv *s;
 	struct lsn *n;
 
+	if (handle_tap(m))
+		return;
 	switch (m->dm_Cmd) {
 	case DNC_CONNECT:
 		do_connect(m);
@@ -576,6 +738,14 @@ void srv_tick(unsigned ms)
 	int i;
 
 	now += ms;
+	for (i = 0; i < MAXTAP; i++) {
+		struct tap *t = &taps[i];
+		if (t->used && t->pread && (LONG)(now - t->read_deadline) >= 0) {
+			struct DnMsg *m = t->pread;
+			t->pread = NULL;
+			reply(m, DNR_TIMEOUT, 0);
+		}
+	}
 	for (i = 0; i < MAXLISTEN; i++) {
 		struct lsn *n = &lsns[i];
 		if (n->used && n->paccept && (LONG)(now - n->accept_deadline) >= 0) {
@@ -645,6 +815,14 @@ void srv_shutdown(void)
 			reply(n->paccept, -1, DNREASON_SHUTDOWN);
 		n->paccept = NULL;
 	}
+	for (i = 0; i < MAXTAP; i++)
+		if (taps[i].used) {
+			if (taps[i].pread)
+				reply(taps[i].pread, DNR_CLOSED, DNREASON_SHUTDOWN);
+			taps[i].pread = NULL;
+			free_qmsgs(taps[i].head);
+			taps[i].used = 0;
+		}
 	for (i = 0; i < MAXSRV; i++) {
 		struct srv *s = &srvs[i];
 		if (!s->used)

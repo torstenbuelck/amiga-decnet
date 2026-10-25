@@ -27,7 +27,22 @@ enum {
 	DNC_ACCEPT,         /* dm_Link listener, dm_Buf DnConnInfo, dm_Timeout
 	                       -> dm_Id link (still to be answered) */
 	DNC_ANSWER,         /* dm_Link, dm_Reason (0 accept), dm_Buf/dm_Len data */
-	DNC_UNLISTEN        /* dm_Link listener */
+	DNC_UNLISTEN,       /* dm_Link listener */
+	/* frames of another protocol on dnetd's device (dnetd 0.7, for
+	   latd): one program per ethertype */
+	DNC_TAPOPEN,        /* dm_Len ethertype, dm_Buf struct DnTapInfo
+	                       -> dm_Id tap */
+	DNC_TAPREAD,        /* dm_Link tap, dm_Buf/dm_Len/dm_Timeout -> dm_Result
+	                       frame length: dst(6) src(6) type(2) payload */
+	DNC_TAPWRITE,       /* dm_Link tap, dm_Buf dst(6) payload, dm_Len */
+	DNC_TAPCLOSE        /* dm_Link tap */
+};
+
+/* DNC_TAPOPEN */
+struct DnTapInfo {
+	UBYTE dti_Multicast[6];     /* in: multicast address to receive too
+	                               (all zero: none) */
+	UBYTE dti_Address[6];       /* out: the station address */
 };
 
 struct DnMsg {

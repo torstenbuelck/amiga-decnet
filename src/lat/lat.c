@@ -562,13 +562,17 @@ static void do_run(const unsigned char *src, const unsigned char *m, unsigned le
 		resend_last(c);
 	}
 	do_slots(c, m, len);
+	if (!sessions_left(c)) {
+		/* the last session is over: end the circuit now. Answering
+		   instead would go on for ever, as VMS keeps asking for
+		   answers on an idle circuit */
+		send_stop(c, 1);
+		circuit_down(c, LAT_R_USER);
+		return;
+	}
 	if ((m[0] & 1) || m[1])
 		c->reply_due = 1;
 	circ_pump(c, 0);
-	if (!sessions_left(c) && !c->need_ack) {
-		send_stop(c, 1);
-		circuit_down(c, LAT_R_USER);
-	}
 }
 
 static void do_start(const unsigned char *src, const unsigned char *m, unsigned len)
@@ -781,6 +785,18 @@ void lat_disconnect(int sid)
 	}
 	s->state = S_STOP;
 	circ_pump(c, 0);
+}
+
+void lat_shutdown(void)
+{
+	int i;
+
+	for (i = 0; i < LAT_MAXCIRC; i++)
+		if (circs[i].state == C_RUN) {
+			send_stop(&circs[i], 1);
+			circuit_down(&circs[i], LAT_R_USER);
+		} else if (circs[i].state == C_START)
+			circuit_down(&circs[i], LAT_R_USER);
 }
 
 const char *lat_reason_text(int reason)

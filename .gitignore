@@ -26,3 +26,5 @@ __pycache__/
 
 # the local node list with user names and passwords
 /config/nodes
+/src/lat/latd
+/src/lat/lattest

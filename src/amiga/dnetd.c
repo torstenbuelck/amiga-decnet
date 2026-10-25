@@ -47,16 +47,18 @@
 #include "s2buff.h"
 
 #define NREAD   32      /* a2065.device: VMS bursts of 9+ frames within 25 us */
+#define NTREAD  8       /* reads for the tap's ethertype (LAT) */
 #define BUFLEN  1518
 #define TICK_US 100000
 
-static const char version[] = "$VER: dnetd 0.6 (24.10.2026)";
+static const char version[] = "$VER: dnetd 0.7 (25.10.2026)";
 
 struct Device *TimerBase;
 
 static struct MsgPort *port, *wport, *tport;
-static struct IOSana2Req *ctl, *wr, *rd[NREAD];
-static UBYTE *rbuf[NREAD], *wbuf;
+static struct IOSana2Req *ctl, *wr, *rd[NREAD], *trd[NTREAD];
+static UBYTE *rbuf[NREAD], *trbuf[NTREAD], *wbuf, tframe[BUFLEN];
+static UWORD tap_type;          /* ethertype passed to a program, 0: none */
 static struct timerequest *treq;
 static BOOL dev_open, timer_open, tpending;
 static BOOL rawmode;
@@ -87,19 +89,18 @@ static void out(const char *fmt, ...)
 
 /* ---- core environment ---------------------------------------------------- */
 
-static void env_send(void *ctx, const dn_u8 *dst, const dn_u8 *payload, unsigned len)
+static void send_type(UWORD type, const UBYTE *dst, const UBYTE *payload, ULONG len)
 {
-	(void)ctx;
 	if (len + 14 > BUFLEN)
 		return;
 	wr->ios2_Req.io_Command = CMD_WRITE;
-	wr->ios2_PacketType = DN_ETHERTYPE;
+	wr->ios2_PacketType = type;
 	memcpy(wr->ios2_DstAddr, dst, 6);
 	if (rawmode) {
 		memcpy(wbuf, dst, 6);
 		memcpy(wbuf + 6, mymac, 6);
-		wbuf[12] = DN_ETHERTYPE >> 8;
-		wbuf[13] = DN_ETHERTYPE & 0xff;
+		wbuf[12] = type >> 8;
+		wbuf[13] = type & 0xff;
 		memcpy(wbuf + 14, payload, len);
 		wr->ios2_Req.io_Flags = SANA2IOF_RAW;
 		wr->ios2_DataLength = len + 14;
@@ -114,6 +115,12 @@ static void env_send(void *ctx, const dn_u8 *dst, const dn_u8 *payload, unsigned
 	if (wr->ios2_Req.io_Error)
 		out("dnetd: write error %ld/%ld\n", (LONG)wr->ios2_Req.io_Error,
 		       (LONG)wr->ios2_WireError);
+}
+
+static void env_send(void *ctx, const dn_u8 *dst, const dn_u8 *payload, unsigned len)
+{
+	(void)ctx;
+	send_type(DN_ETHERTYPE, dst, payload, len);
 }
 
 static void *env_alloc(void *ctx, unsigned n)
@@ -142,14 +149,19 @@ static void env_log(void *ctx, int level, const char *msg)
 
 /* ---- device handling ----------------------------------------------------------- */
 
+static void queue_req(struct IOSana2Req *r, UBYTE *buf, UWORD type)
+{
+	r->ios2_Req.io_Command = CMD_READ;
+	r->ios2_Req.io_Flags = rawmode ? SANA2IOF_RAW : 0;
+	r->ios2_PacketType = type;
+	r->ios2_DataLength = BUFLEN;
+	r->ios2_Data = buf;
+	BeginIO((struct IORequest *)r);       /* not SendIO: it clears io_Flags */
+}
+
 static void queue_read(int i)
 {
-	rd[i]->ios2_Req.io_Command = CMD_READ;
-	rd[i]->ios2_Req.io_Flags = rawmode ? SANA2IOF_RAW : 0;
-	rd[i]->ios2_PacketType = DN_ETHERTYPE;
-	rd[i]->ios2_DataLength = BUFLEN;
-	rd[i]->ios2_Data = rbuf[i];
-	BeginIO((struct IORequest *)rd[i]);   /* not SendIO: it clears io_Flags */
+	queue_req(rd[i], rbuf[i], DN_ETHERTYPE);
 }
 
 static BOOL open_device(const char *name, LONG unit, ULONG flags)
@@ -183,6 +195,83 @@ static void add_multicast(const UBYTE *mac)
 	if (DoIO((struct IORequest *)ctl) != 0)
 		out("dnetd: S2_ADDMULTICASTADDRESS: error %ld/%ld\n",
 		       (LONG)ctl->ios2_Req.io_Error, (LONG)ctl->ios2_WireError);
+}
+
+/* a frame of the tap's ethertype: to the program as dst src type payload */
+static void handle_tap_frame(struct IOSana2Req *r, UBYTE *buf)
+{
+	ULONG len = r->ios2_DataLength;
+
+	if (rawmode) {
+		if (len < 14 || (memcmp(buf, mymac, 6) != 0 && !(buf[0] & 1)) ||
+		    memcmp(buf + 6, mymac, 6) == 0)
+			return;
+		srv_tap_input(buf, len);
+		return;
+	}
+	if (len + 14 > BUFLEN)
+		return;
+	memcpy(tframe, r->ios2_DstAddr, 6);
+	memcpy(tframe + 6, r->ios2_SrcAddr, 6);
+	tframe[12] = tap_type >> 8;
+	tframe[13] = tap_type & 0xff;
+	memcpy(tframe + 14, buf, len);
+	srv_tap_input(tframe, len + 14);
+}
+
+/* dnserver: start passing frames of another ethertype (once; further
+   calls only check the type) and receive a multicast address */
+int dnetd_tap_enable(UWORD type, const UBYTE *mcast)
+{
+	static const UBYTE zero[6];
+	static UBYTE added[6];
+	int i;
+
+	if (type == DN_ETHERTYPE || (tap_type && tap_type != type))
+		return -1;
+	if (!tap_type) {
+		for (i = 0; i < NTREAD; i++) {
+			struct IOSana2Req *r;
+			UBYTE *b;
+
+			/* only requests that went to the device are kept:
+			   cleanup() waits for each of them */
+			r = (struct IOSana2Req *)CreateIORequest(port, sizeof(struct IOSana2Req));
+			b = AllocVec(BUFLEN, MEMF_ANY);
+			if (!r || !b) {
+				if (r)
+					DeleteIORequest((struct IORequest *)r);
+				if (b)
+					FreeVec(b);
+				break;
+			}
+			CopyMem(ctl, r, sizeof(struct IOSana2Req));
+			r->ios2_Req.io_Message.mn_ReplyPort = port;
+			trd[i] = r;
+			trbuf[i] = b;
+			queue_req(r, b, type);
+		}
+		if (i == 0)
+			return -1;
+		tap_type = type;
+		out("dnetd: passing ethertype %04lx to a program\n", (ULONG)type);
+	}
+	if (mcast && memcmp(mcast, zero, 6) && memcmp(mcast, added, 6)) {
+		add_multicast(mcast);
+		memcpy(added, mcast, 6);
+	}
+	return 0;
+}
+
+void dnetd_tap_send(const UBYTE *dst, const UBYTE *payload, ULONG len)
+{
+	if (tap_type)
+		send_type(tap_type, dst, payload, len);
+}
+
+const UBYTE *dnetd_address(void)
+{
+	return mymac;
 }
 
 static void handle_frame(struct IOSana2Req *r, UBYTE *buf)
@@ -248,6 +337,20 @@ static void cleanup(void)
 		if (rbuf[i]) {
 			FreeVec(rbuf[i]);
 			rbuf[i] = NULL;
+		}
+	}
+	for (i = 0; i < NTREAD; i++) {
+		if (trd[i]) {
+			if (!s2_abort((struct IORequest *)trd[i])) {
+				stuck = TRUE;
+				continue;
+			}
+			DeleteIORequest((struct IORequest *)trd[i]);
+			trd[i] = NULL;
+		}
+		if (trbuf[i]) {
+			FreeVec(trbuf[i]);
+			trbuf[i] = NULL;
 		}
 	}
 	if (stuck)
@@ -458,8 +561,17 @@ int main(void)
 			for (i = 0; i < NREAD; i++)
 				if (rd[i] == r)
 					break;
-			if (i == NREAD)
+			if (i == NREAD) {
+				for (i = 0; i < NTREAD; i++)
+					if (trd[i] == r)
+						break;
+				if (i == NTREAD)
+					continue;
+				if (r->ios2_Req.io_Error == 0)
+					handle_tap_frame(r, trbuf[i]);
+				queue_req(r, trbuf[i], tap_type);
 				continue;
+			}
 			if (r->ios2_Req.io_Error == 0)
 				handle_frame(r, rbuf[i]);
 			queue_read(i);

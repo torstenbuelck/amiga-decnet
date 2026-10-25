@@ -88,6 +88,8 @@ unsigned lat_room(int sid);
 int  lat_break(int sid);
 /* end a session; LAT_EV_DOWN follows */
 void lat_disconnect(int sid);
+/* stop every circuit at once (LAT_EV_DOWN for what is left) */
+void lat_shutdown(void);
 
 const char *lat_reason_text(int reason);
 
