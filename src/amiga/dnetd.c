@@ -51,7 +51,7 @@
 #define BUFLEN  1518
 #define TICK_US 100000
 
-static const char version[] = "$VER: dnetd 0.7 (25.10.2026)";
+static const char version[] = "$VER: dnetd 0.8 (25.10.2026)";
 
 struct Device *TimerBase;
 
@@ -89,8 +89,15 @@ static void out(const char *fmt, ...)
 
 /* ---- core environment ---------------------------------------------------- */
 
+/* Short frames are padded with zeros here: drivers fill up to the
+   Ethernet minimum with whatever their buffers hold (a2065.device sent
+   pieces of earlier frames, dn-handler's connect data among them) */
+#define MINDATA 46
+
 static void send_type(UWORD type, const UBYTE *dst, const UBYTE *payload, ULONG len)
 {
+	ULONG n = len < MINDATA ? MINDATA : len;
+
 	if (len + 14 > BUFLEN)
 		return;
 	wr->ios2_Req.io_Command = CMD_WRITE;
@@ -102,12 +109,14 @@ static void send_type(UWORD type, const UBYTE *dst, const UBYTE *payload, ULONG 
 		wbuf[12] = type >> 8;
 		wbuf[13] = type & 0xff;
 		memcpy(wbuf + 14, payload, len);
+		memset(wbuf + 14 + len, 0, n - len);
 		wr->ios2_Req.io_Flags = SANA2IOF_RAW;
-		wr->ios2_DataLength = len + 14;
+		wr->ios2_DataLength = n + 14;
 	} else {
 		memcpy(wbuf, payload, len);
+		memset(wbuf + len, 0, n - len);
 		wr->ios2_Req.io_Flags = 0;
-		wr->ios2_DataLength = len;
+		wr->ios2_DataLength = n;
 	}
 	wr->ios2_Data = wbuf;
 	BeginIO((struct IORequest *)wr);
