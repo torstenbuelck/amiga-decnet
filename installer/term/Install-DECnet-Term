@@ -108,8 +108,8 @@
 			(prompt "Also over LAT from which terminal servers?\n\n"
 			        "LAT node names of the terminal servers (or VMS nodes, "
 			        "SET HOST/LAT) allowed to use the maintenance login, "
-			        "separated by blanks; NAME/PORT allows only that port of "
-			        "it. Leave it empty for no LAT.")
+			        "separated by blanks or commas; NAME/PORT allows only that "
+			        "port of it. Leave it empty for no LAT.")
 			(help "The login is then offered as LAT service named like this "
 			      "Amiga (ENV:DECnet/Name). Only the nodes you name here get the "
 			      "password prompt. A terminal server used by many people "
@@ -125,7 +125,7 @@
 		(if (OR (= #lat "") (patmatch "#[-A-Za-z0-9$_.,/ ]" #lat))
 			(set #lat-ok 1)
 			(message "\"" #lat "\" is not a list of LAT node names (letters, "
-			         "digits, $ _ . -, NAME/PORT, separated by blanks).")
+			         "digits, $ _ . -, NAME/PORT, separated by blanks or commas).")
 		)
 	)
 

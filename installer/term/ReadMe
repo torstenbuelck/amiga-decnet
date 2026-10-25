@@ -204,9 +204,10 @@ last 20 lines typed in this session. The terminal should be a VT100 or
 compatible.
 
 Over LAT: the installation also asks for LAT terminal servers (by
-their LAT node names, e.g. VAX1 TSERV2). If you name any, the login is
-offered as a LAT service named like this Amiga (ENV:DECnet/Name), as
-long as latd runs. On a VMS node in the list:
+their LAT node names, separated by blanks or commas, e.g. VAX1 TSERV2).
+If you name any, the login is offered as a LAT service named like this
+Amiga (ENV:DECnet/Name), as long as latd runs. On a VMS node in the
+list:
 
   $ SET HOST/LAT MYAMI         (MYAMI being this Amiga's name)
 
