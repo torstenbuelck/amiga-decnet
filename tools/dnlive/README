@@ -28,9 +28,10 @@ blanking off. Remove it with  sudo ./install.sh --remove
 Operation:
   systemctl status dnlive               is the service running?
   journalctl -u dnlive                  its messages
-  Alt+F4                                ends the full-screen browser
-                                        (kiosk.sh opens it again after
-                                        5 s; log out to stop it)
+  Esc or Ctrl+W                         ends the full-screen browser
+                                        (it comes back only after a
+                                        crash, or at the next login)
+  /opt/dnlive/kiosk.sh                  opens it again
 
 The service runs as its own unprivileged user with only CAP_NET_RAW
 (to read frames). It puts the LAN interface into promiscuous mode, or

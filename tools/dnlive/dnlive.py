@@ -327,7 +327,16 @@ def snapshot(lan, wan, sn):
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path.startswith("/api"):
+        # Esc on the page: /quit; kiosk.sh asks /quit-pending once a
+        # second and then ends the browser (a page may not close a
+        # window it did not open itself)
+        if self.path == "/quit":
+            state["quit"] = True
+            body, ctype = b"ok", "text/plain"
+        elif self.path == "/quit-pending":
+            body = b"yes" if state.pop("quit", False) else b"no"
+            ctype = "text/plain"
+        elif self.path.startswith("/api"):
             with lock:
                 body = json.dumps(state.get("snap", {})).encode()
             ctype = "application/json"

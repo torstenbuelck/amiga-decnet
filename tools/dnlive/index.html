@@ -295,6 +295,13 @@ async function update() {
 }
 setInterval(update, 1000);
 update();
+
+/* Esc: ask kiosk.sh (through dnlive) to end the browser */
+addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  document.getElementById("msg").textContent = "%DNLIVE-I-EXIT, Anzeige wird beendet";
+  fetch("/quit", {cache: "no-store"}).catch(() => {});
+});
 </script>
 </body>
 </html>
