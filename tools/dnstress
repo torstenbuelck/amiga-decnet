@@ -1,0 +1,93 @@
+.KEY N/K,NODE/K,DIR/K,I/K
+.BRA {
+.KET }
+.DEF N 20
+.DEF NODE HOWIE
+.DEF DIR DECnet:Stress
+.DEF I 1
+; dnstress - stops and starts DECnet N times in a row, as the installer's
+; "Restart" does, to catch a dnetd that crashes on start (seen once on
+; the A3000: 80000003 right after "Start", log lost).
+;
+; Copy it to S:, then:  Execute dnstress [N=20] [NODE=HOWIE] [DIR=DECnet:Stress]
+;
+; Every run: DECnet-Stop (latd, dnmaint, dnetd), the logs of that run
+; saved to DIR (on disk, so they survive a reset), DECnet-Start (dnetd,
+; latd, dnmaint), 8 s for them to settle, then "List DN:NODE" for some
+; traffic. Ends early when dnetd does not start, or does not stop (a
+; crashed dnetd keeps its port: "dnetd does not stop").
+; Ctrl-D ends it (Ctrl-C only stops the command running).
+;
+; No loop with Skip BACK: after a nested Execute (DECnet-Stop/-Start)
+; Skip no longer finds the label. Each run calls the next one instead
+; (I = run number), as its last command; Execute finds it in S:.
+;
+; Each stop leaves the reads the card did not give back with the card
+; (a2065.device), about 60 KB per run; reboot after the test.
+;
+; Copyright (C) 2026  Torsten Bülck (tuti)
+; SPDX-License-Identifier: GPL-2.0-or-later
+
+FailAt 21
+Which >NIL: dnetd
+If WARN
+  Path DECnet:C ADD
+EndIf
+If VAL {I} EQ 1
+  If NOT EXISTS "{DIR}"
+    MakeDir "{DIR}"
+  EndIf
+  Date >"{DIR}/summary.txt"
+  Echo >>"{DIR}/summary.txt" "dnstress: {N} runs, node {NODE}"
+EndIf
+Echo "=== run {I} of {N}"
+
+; stop; a dnetd that does not go away has crashed
+Execute >NIL: DECnet:S/DECnet-Stop
+dnetd >NIL: CHECK
+If NOT WARN
+  Echo "*** run {I}: dnetd does not stop - crashed? Logs in {DIR}"
+  Echo >>"{DIR}/summary.txt" "run {I}: dnetd does not stop"
+  Status >"{DIR}/status-{I}.txt"
+  Copy T:dnetd.log "{DIR}/dnetd-{I}-crash.log" QUIET
+  Quit 10
+EndIf
+; the logs of the run that just ended (the next start overwrites them)
+If EXISTS T:dnetd.log
+  Copy T:dnetd.log "{DIR}/dnetd-{I}.log" QUIET
+EndIf
+If EXISTS T:latd.log
+  Copy T:latd.log "{DIR}/latd-{I}.log" QUIET
+EndIf
+If EXISTS T:dnmaint.log
+  Copy T:dnmaint.log "{DIR}/dnmaint-{I}.log" QUIET
+EndIf
+Wait 2
+
+; start, as the installer does
+Execute DECnet:S/DECnet-Start
+Wait 8
+dnetd >NIL: CHECK
+If WARN
+  Echo "*** run {I}: dnetd did not start. Logs in {DIR}"
+  Echo >>"{DIR}/summary.txt" "run {I}: dnetd did not start"
+  Copy T:dnetd.log "{DIR}/dnetd-{I}-nostart.log" QUIET
+  Quit 10
+EndIf
+Status >"{DIR}/status-{I}.txt"
+List >"{DIR}/list-{I}.txt" DN:{NODE}
+If WARN
+  Echo "    run {I}: List DN:{NODE} failed (see list-{I}.txt)"
+  Echo >>"{DIR}/summary.txt" "run {I}: List DN:{NODE} failed"
+Else
+  Echo >>"{DIR}/summary.txt" "run {I}: ok"
+EndIf
+
+If VAL {N} GT {I}
+  Set dnstressnext `Eval {I} + 1`
+  Execute dnstress N={N} NODE={NODE} DIR="{DIR}" I=$dnstressnext
+  Quit
+EndIf
+UnSet dnstressnext
+Date >>"{DIR}/summary.txt"
+Echo "=== all {N} runs passed, summary: {DIR}/summary.txt"
