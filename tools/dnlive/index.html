@@ -133,12 +133,12 @@ const AMBER = "#ffb000", DIM = "#a86f00", FAINT = "#4a3100";
 const MONTHS = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
 const screenEl = document.getElementById("screen");
 
+let scale = 1;           /* of the 1366x768 layout to the window */
 function fit() {
-  const s = Math.min(innerWidth / 1366, innerHeight / 768);
+  const s = scale = Math.min(innerWidth / 1366, innerHeight / 768);
   screenEl.style.transform = "scale(" + s + ")";
   screenEl.style.left = ((innerWidth - 1366 * s) / 2) + "px";
   screenEl.style.top = ((innerHeight - 768 * s) / 2) + "px";
-  for (const c of document.querySelectorAll("canvas")) c.dataset.w = "";
 }
 addEventListener("resize", fit);
 fit();
@@ -169,9 +169,14 @@ function nice(v) {
 
 /* RX up from the middle line, TX down from it; history scrolls left */
 function graph(canvas, rx, tx) {
+  /* drawn in layout units (1366x768), but with as many pixels as the
+     screen shows, so it stays sharp when the page is scaled up */
   const W = canvas.offsetWidth, H = canvas.offsetHeight;
-  if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+  const k = scale * (window.devicePixelRatio || 1);
+  const pw = Math.round(W * k), ph = Math.round(H * k);
+  if (canvas.width !== pw || canvas.height !== ph) { canvas.width = pw; canvas.height = ph; }
   const g = canvas.getContext("2d");
+  g.setTransform(pw / W, 0, 0, ph / H, 0, 0);
   g.clearRect(0, 0, W, H);
   const L = 74, mid = Math.round(H / 2), half = mid - 4;
   const max = nice(Math.max(...rx, ...tx) * 1.1);
