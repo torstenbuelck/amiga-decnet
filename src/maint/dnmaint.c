@@ -15,7 +15,7 @@
  * the log).
  *
  * Started from DECnet-Start when the installer enabled it. Waits for
- * connects on object 42, rejects every node but the configured one
+ * connects on object 42, rejects every node but the configured ones
  * (DNREASON_ACCESS), then runs one session at a time (see session.c);
  * further connects wait at dnetd meanwhile. With LAT nodes configured
  * and latd running it also offers the service named after the node:
@@ -39,7 +39,7 @@
 #include "../amiga/dnmsg.h"
 #include "dnmaint.h"
 
-static const char version[] = "$VER: dnmaint 0.4 (25.10.2026)";
+static const char version[] = "$VER: dnmaint 0.5 (26.10.2026)";
 
 #define MAINT_PORTNAME "DECnet-Maint"
 
@@ -65,29 +65,56 @@ static long env(const char *name, char *buf, long size)
 	return n;
 }
 
-/* read ENV:DECnet/maint-node and maint-password; 0 = both set.
+/* the separators in the node lists */
+static BOOL sep(char c)
+{
+	return c == 0 || c == ' ' || c == ',' || c == '\t';
+}
+
+/* read ENV:DECnet/maint-node, maint-latnodes and maint-password;
+   0 = password and at least one CTERM node set.
    Read again for every connect, so a change counts without a restart */
 int cfg_load(struct mcfg *cfg)
 {
-	char node[64];
+	char list[120], name[24];
+	const char *p;
 	LONG a;
+	int n;
 
 	memset(cfg, 0, sizeof *cfg);
 	env("DECnet/maint-password", cfg->password, sizeof cfg->password);
 	env("DECnet/maint-latnodes", cfg->latnodes, sizeof cfg->latnodes);
-	if (env("DECnet/maint-node", node, sizeof node)) {
-		/* area.node, or a name from ENV:DECnet/nodes */
-		a = DnNodeAddr((CONST_STRPTR)node);
-		if (a > 0 && (a >> 10) >= 1 && (a & 1023) >= 1)
-			cfg->node = (UWORD)a;
+	env("DECnet/maint-node", list, sizeof list);
+	/* area.node or names from ENV:DECnet/nodes, blank or comma
+	   separated */
+	for (p = list; *p; ) {
+		while (*p && sep(*p))
+			p++;
+		for (n = 0; *p && !sep(*p); p++)
+			if (n < (int)sizeof name - 1)
+				name[n++] = *p;
+		name[n] = 0;
+		if (!n)
+			break;
+		a = DnNodeAddr((CONST_STRPTR)name);
+		if (a > 0 && (a >> 10) >= 1 && (a & 1023) >= 1) {
+			if (cfg->nnodes < MAINT_NODES)
+				cfg->nodes[cfg->nnodes++] = (UWORD)a;
+		} else if (!cfg->badnode[0])
+			strcpy(cfg->badnode, name);
 	}
-	return cfg->node && cfg->password[0] ? 0 : -1;
+	return cfg->nnodes && cfg->password[0] ? 0 : -1;
 }
 
-/* the connect comes from the maintenance node */
+/* the connect comes from a maintenance node */
 BOOL node_allowed(const struct mcfg *cfg, UWORD node)
 {
-	return cfg->node != 0 && node == cfg->node;
+	int i;
+
+	for (i = 0; i < cfg->nnodes; i++)
+		if (node == cfg->nodes[i])
+			return TRUE;
+	return FALSE;
 }
 
 static int upcase(int c)
@@ -98,11 +125,6 @@ static int upcase(int c)
 /* the LAT node (terminal server) is in maint-latnodes: entries are
    NAME (every port of that terminal server) or NAME/PORT, separated
    by blanks or commas, case does not matter */
-static BOOL sep(char c)
-{
-	return c == 0 || c == ' ' || c == ',' || c == '\t';
-}
-
 /* the entry at p starts with name; returns the rest of the
    entry after it, or NULL */
 static const char *match(const char *p, const char *name)
@@ -251,8 +273,15 @@ int main(void)
 		mlog("dnmaint: needs decnet.library 1.2\n");
 		goto out;
 	}
-	if (cfg_load(&cfg))
-		mlog("dnmaint: ENV:DECnet/maint-node or maint-password not set, every connect is refused\n");
+	cfg_load(&cfg);
+	if (!cfg.password[0])
+		mlog("dnmaint: ENV:DECnet/maint-password not set, every connect is refused\n");
+	else if (!cfg.nnodes && !cfg.latnodes[0])
+		mlog("dnmaint: ENV:DECnet/maint-node and maint-latnodes not set, every connect is refused\n");
+	else if (!cfg.nnodes)
+		mlog("dnmaint: ENV:DECnet/maint-node not set, LAT only\n");
+	if (cfg.badnode[0])
+		mlog("dnmaint: maint-node: %s is no known node, ignored\n", (STRPTR)cfg.badnode);
 	ls = DnListen(MAINT_OBJECT, NULL);
 	if (!ls) {
 		mlog("dnmaint: cannot serve object 42 (taken, or dnetd not running)\n");

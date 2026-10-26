@@ -1,9 +1,9 @@
-; $VER: Install-DECnet-Term 0.5 (25.10.2026)
+; $VER: Install-DECnet-Term 0.6 (26.10.2026)
 ;
 ; Installer script for DECnet-Term, the terminal add-on of the Amiga
 ; DECnet endnode: dnterm.device (CTERM and LAT terminal sessions to other
-; nodes) and, if the user enables it, the maintenance login (one other
-; node may log in to an Amiga Shell). Needs DECnet (LIBS:decnet.library)
+; nodes) and, if the user enables it, the maintenance login (the nodes
+; named may log in to an Amiga Shell). Needs DECnet (LIBS:decnet.library)
 ; and AmigaOS 2.04; LAT needs dnetd 0.7.
 ;
 ; Installs:
@@ -14,14 +14,14 @@
 ;   DECnet:S/DECnet-Stop-Term     run by DECnet-Stop
 ; and with the maintenance login:
 ;   DECnet:C/dnmaint              the maintenance login service
-;   ENVARC:DECnet/maint-node      the node allowed to log in
+;   ENVARC:DECnet/maint-node      the DECnet nodes allowed (optional)
 ;   ENVARC:DECnet/maint-latnodes  LAT terminal servers allowed (optional)
 ;   ENVARC:DECnet/maint-password  its password (plain text)
 ;
 ; Copyright (C) 2026  Torsten Bülck (tuti)
 ; SPDX-License-Identifier: GPL-2.0-or-later
 
-(set #version "0.5")
+(set #version "0.6")
 (set @app-name "DECnet-Term")
 
 (if (< (/ (getversion) 65536) 37)
@@ -30,19 +30,46 @@
 
 ; ---------------------------------------------------------------- helpers
 
-; #addr must be "area.node", area 1-63, node 1-1023. Sets #addr-ok.
-(procedure P_CHECKADDR
-	(set #addr-ok 0)
-	(if (patmatch "[0-9]#[0-9].[0-9]#[0-9]" #addr)
-		(
-			(set #i 0)
-			(while (<> (substr #addr #i 1) ".") (set #i (+ #i 1)))
-			(set #area (+ 0 (substr #addr 0 #i)))
-			(set #node (+ 0 (substr #addr (+ #i 1))))
-			(if (AND (> #area 0) (< #area 64) (> #node 0) (< #node 1024))
-				(set #addr-ok 1)
+; #nodes is a list of DECnet addresses (area.node, area 1-63, node
+; 1-1023) or node names (1-6 letters and digits, at least one letter),
+; separated by blanks or commas, maybe empty. Sets #nodes-ok, and #bad to
+; the first wrong entry. One flat loop: the Installer runs nested
+; procedures and loops on its stack, and the icon's 4096 bytes are soon
+; used up (deeper nesting crashed the Installer on exit).
+(procedure P_CHECKNODES
+	(set #nodes-ok 1)
+	(set #bad "")
+	(set #len (strlen #nodes))
+	(set #addr "")
+	(set #dot -1)
+	(set #j 0)
+	; one step past the end: the end separates the last entry
+	(while (AND #nodes-ok (<= #j #len))
+		(set #c (if (< #j #len) (substr #nodes #j 1) " "))
+		(if (OR (= #c " ") (= #c ","))
+			(if (<> #addr "")
+				(
+					(set #addr-ok 0)
+					(if (patmatch "[0-9]#[0-9].[0-9]#[0-9]" #addr)
+						(
+							(set #area (+ 0 (substr #addr 0 #dot)))
+							(set #node (+ 0 (substr #addr (+ #dot 1))))
+							(set #addr-ok (AND (> #area 0) (< #area 64) (> #node 0) (< #node 1024)))
+						)
+						(set #addr-ok (AND (< (strlen #addr) 7) (patmatch "#[A-Za-z0-9]" #addr)
+						                   (NOT (patmatch "#[0-9]" #addr))))
+					)
+					(if (NOT #addr-ok) ((set #nodes-ok 0) (set #bad #addr)))
+					(set #addr "")
+					(set #dot -1)
+				)
+			)
+			(
+				(if (= #c ".") (set #dot (strlen #addr)))
+				(set #addr (cat #addr #c))
 			)
 		)
+		(set #j (+ #j 1))
 	)
 )
 
@@ -68,67 +95,85 @@
 	(delete "ENV:DECnet/maint-password" (optional "force") (prompt "") (help ""))
 )
 
-(procedure P_MAINT_ON
-	; ---- the node allowed to log in: a default only when updating, never
-	; on a new setup (a careless click must not let a stranger in)
-	(set #addr "")
-	(if #maint-was-on (set #addr (getenv "DECnet/maint-node")))
-	(set #addr-ok 0)
-	(while (NOT #addr-ok)
-		(set #addr (askstring
-			(prompt "Which node may log in?\n\n"
-			        "Address (area.node) or name from your node list of the ONE "
-			        "DECnet node allowed to use the maintenance login. Connects "
-			        "from every other node are refused.")
-			(help "Only this node gets the password prompt; dnmaint rejects all "
-			      "others before anything is asked. Choose the machine you "
-			      "maintain this Amiga from.\n\n" @askstring-help)
-			(default #addr)
-		))
-		(P_CHECKADDR)
-		; a name: 1-6 letters and digits, at least one letter
-		(if (AND (NOT #addr-ok) (> (strlen #addr) 0) (< (strlen #addr) 7)
-		         (patmatch "#[A-Za-z0-9]" #addr) (NOT (patmatch "#[0-9]" #addr)))
-			(set #addr-ok 1)
-		)
-		(if (NOT #addr-ok)
-			(message "\"" #addr "\" is neither a DECnet address (area.node, "
-			         "area 1-63, node 1-1023) nor a node name (1-6 letters "
-			         "and digits).")
-		)
-	)
-
-	; ---- LAT terminal servers allowed as well (none: no LAT); a default
-	; only when updating
+; the nodes allowed to log in, over DECnet (#nodes) and LAT (#lat); a
+; default only when updating, never on a new setup (a careless click must
+; not let a stranger in). Both empty: enter again, or #maint-off 1
+(procedure P_MAINT_ASK
+	(set #nodes "")
 	(set #lat "")
-	(if #maint-was-on (set #lat (getenv "DECnet/maint-latnodes")))
-	(set #lat-ok 0)
-	(while (NOT #lat-ok)
-		(set #lat (askstring
-			(prompt "Also over LAT from which terminal servers?\n\n"
-			        "LAT node names of the terminal servers (or VMS nodes, "
-			        "SET HOST/LAT) allowed to use the maintenance login, "
-			        "separated by blanks or commas; NAME/PORT allows only that "
-			        "port of it. Leave it empty for no LAT.")
-			(help "The login is then offered as LAT service named like this "
-			      "Amiga (ENV:DECnet/Name). Only the nodes you name here get the "
-			      "password prompt. A terminal server used by many people "
-			      "(a web terminal) can be narrowed to your port: NAME/PORT, "
-			      "as the Amiga's log T:dnmaint.log shows it for a refused "
-			      "connect.\n\n"
-			      "LAT knows no addresses: a node name can be forged by anyone "
-			      "on your LAN, and the password crosses it in clear text.\n\n"
-			      @askstring-help)
-			(default #lat)
-		))
-		; letters, digits and $ _ . - in names, blanks or commas between
-		(if (OR (= #lat "") (patmatch "#[-A-Za-z0-9$_.,/ ]" #lat))
-			(set #lat-ok 1)
-			(message "\"" #lat "\" is not a list of LAT node names (letters, "
-			         "digits, $ _ . -, NAME/PORT, separated by blanks or commas).")
+	(if #maint-was-on
+		(
+			(set #nodes (getenv "DECnet/maint-node"))
+			(set #lat (getenv "DECnet/maint-latnodes"))
 		)
 	)
+	(set #maint-off 0)
+	(set #lists-ok 0)
+	(while (NOT #lists-ok)
+		(set #nodes-ok 0)
+		(while (NOT #nodes-ok)
+			(set #nodes (askstring
+				(prompt "Which DECnet nodes may log in?\n\n"
+				        "Addresses (area.node) or names from your node list of the "
+				        "DECnet nodes allowed to use the maintenance login, "
+				        "separated by blanks or commas. Connects from every other "
+				        "node are refused. Leave it empty for LAT only.")
+				(help "Only these nodes get the password prompt; dnmaint rejects all "
+				      "others before anything is asked. Choose the machines you "
+				      "maintain this Amiga from (VMS: SET HOST).\n\n" @askstring-help)
+				(default #nodes)
+			))
+			(P_CHECKNODES)
+			(if (NOT #nodes-ok)
+				(message "\"" #bad "\" is neither a DECnet address (area.node, "
+				         "area 1-63, node 1-1023) nor a node name (1-6 letters "
+				         "and digits).")
+			)
+		)
+		(set #lat-ok 0)
+		(while (NOT #lat-ok)
+			(set #lat (askstring
+				(prompt "Which LAT terminal servers may log in?\n\n"
+				        "LAT node names of the terminal servers (or VMS nodes, "
+				        "SET HOST/LAT) allowed to use the maintenance login, "
+				        "separated by blanks or commas; NAME/PORT allows only that "
+				        "port of it. Leave it empty for no LAT.")
+				(help "The login is then offered as LAT service named like this "
+				      "Amiga (ENV:DECnet/Name). Only the nodes you name here get the "
+				      "password prompt. A terminal server used by many people "
+				      "(a web terminal) can be narrowed to your port: NAME/PORT, "
+				      "as the Amiga's log T:dnmaint.log shows it for a refused "
+				      "connect.\n\n"
+				      "LAT knows no addresses: a node name can be forged by anyone "
+				      "on your LAN, and the password crosses it in clear text.\n\n"
+				      @askstring-help)
+				(default #lat)
+			))
+			; letters, digits and $ _ . - in names, blanks or commas between
+			(if (OR (= #lat "") (patmatch "#[-A-Za-z0-9$_.,/ ]" #lat))
+				(set #lat-ok 1)
+				(message "\"" #lat "\" is not a list of LAT node names (letters, "
+				         "digits, $ _ . -, NAME/PORT, separated by blanks or commas).")
+			)
+		)
+		(if (AND (= #nodes "") (= #lat ""))
+			(if (= 0 (askbool
+				(prompt "No DECnet node and no LAT node named!\n\n"
+				        "Then nobody could use the maintenance login. Enter "
+				        "the nodes again, or switch the maintenance login off?")
+				(help "The maintenance login needs at least one DECnet node "
+				      "or one LAT node that may log in.")
+				(choices "Enter again" "Switch off")
+				(default 1)))
+				((set #maint-off 1) (set #lists-ok 1))
+			)
+			(set #lists-ok 1)
+		)
+	)
+)
 
+; password, files, start
+(procedure P_MAINT_ON
 	; ---- the password
 	(set #pw "")
 	(set #pw-ok 0)
@@ -157,7 +202,11 @@
 	)
 	(makedir "ENVARC:DECnet" (prompt "") (help ""))
 	(makedir "ENV:DECnet" (prompt "") (help ""))
-	(set #var "maint-node") (set #val #addr) (P_SAVEVAR)
+	(delete "ENVARC:DECnet/maint-node" (optional "force") (prompt "") (help ""))
+	(delete "ENV:DECnet/maint-node" (optional "force") (prompt "") (help ""))
+	(if (<> #nodes "")
+		((set #var "maint-node") (set #val #nodes) (P_SAVEVAR))
+	)
 	(delete "ENVARC:DECnet/maint-latnodes" (optional "force") (prompt "") (help ""))
 	(delete "ENV:DECnet/maint-latnodes" (optional "force") (prompt "") (help ""))
 	(if (<> #lat "")
@@ -182,8 +231,10 @@
 			)
 		)
 	)
-	(set #maint-text (cat "\n\nThe maintenance login is enabled for " #addr
-	                      (if (<> #lat "") (cat " and over LAT for " #lat) "")
+	(set #maint-text (cat "\n\nThe maintenance login is enabled"
+	                      (if (<> #nodes "") (cat " for " #nodes) "")
+	                      (if (AND (<> #nodes "") (<> #lat "")) " and" "")
+	                      (if (<> #lat "") (cat " over LAT for " #lat) "")
 	                      ". Read \"Maintenance login\" in the ReadMe."))
 )
 
@@ -192,12 +243,13 @@
 	(set #maint-text "")
 	(if (askbool
 		(prompt "Enable the maintenance login?\n\n"
-		        "It lets ONE other DECnet node log in to an Amiga Shell on this "
-		        "Amiga (VMS: SET HOST), after a password. Whoever has that node "
-		        "and the password can do everything on this Amiga.\n\n"
+		        "It lets the DECnet or LAT nodes you name log in to an Amiga "
+		        "Shell on this Amiga (VMS: SET HOST), after a password. Whoever "
+		        "has such a node and the password can do everything on this "
+		        "Amiga.\n\n"
 		        "Passwords travel unencrypted over the network. Read "
 		        "\"Maintenance login\" in the ReadMe before you enable it.")
-		(help "dnmaint answers CTERM connects (object 42) from the node you "
+		(help "dnmaint answers CTERM connects (object 42) from the nodes you "
 		      "name, asks for the password and then starts a Shell. Everything "
 		      "you could do at this Amiga's keyboard can be done from there.\n\n"
 		      "Answer \"No\" to leave it off (or to switch it off again).")
@@ -210,7 +262,18 @@
 				         "DECnet-Start would not start the maintenance login.\n\n"
 				         "Update DECnet first (Install-DECnet), then run this "
 				         "installation again to enable it.")
-				(P_MAINT_ON)
+				(
+					(P_MAINT_ASK)
+					(if #maint-off
+						(
+							(P_MAINT_OFF)
+							(if #maint-was-on
+								(set #maint-text "\n\nThe maintenance login has been switched off.")
+							)
+						)
+						(P_MAINT_ON)
+					)
+				)
 			)
 		)
 		(if #maint-was-on

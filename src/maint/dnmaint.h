@@ -1,17 +1,18 @@
 /*
  * dnmaint.h - maintenance login service: shared declarations.
  *
- * A CTERM host (ctermh.c) on object 42 that lets exactly one DECnet node
- * (the maintenance machine) log in to an Amiga Shell. Every connect from
- * another node is rejected before CTERM starts; without a configured node
- * and password the service refuses every connect.
+ * A CTERM host (ctermh.c) on object 42 that lets the DECnet nodes named
+ * in maint-node (the maintenance machines) log in to an Amiga Shell.
+ * Every connect from another node is rejected before CTERM starts;
+ * without a password the service refuses every connect.
  *
  * The same login is offered over LAT (latd, service named after the
  * node) to the terminal servers named in maint-latnodes.
  *
  * Configuration (read from ENV: only, see the installer):
- *   ENV:DECnet/maint-node      the only node allowed (area.node, or a
- *                              name from ENV:DECnet/nodes)
+ *   ENV:DECnet/maint-node      nodes allowed, area.node or a name from
+ *                              ENV:DECnet/nodes (blank or comma
+ *                              separated); none: no CTERM
  *   ENV:DECnet/maint-latnodes  LAT node names allowed, NAME or NAME/PORT
  *                              (blank or comma separated); none: no LAT
  *   ENV:DECnet/maint-password  password asked after connect
@@ -33,10 +34,13 @@
 #define MAINT_TRIES      3      /* password attempts per connect */
 #define MAINT_FAILDELAY  (3 * 50)   /* ticks to wait after a wrong password */
 #define MAINT_PWMAX      40
+#define MAINT_NODES      16     /* entries in maint-node */
 
 /* configuration, from ENV:DECnet/maint-* */
 struct mcfg {
-	UWORD node;                     /* allowed node, 0 = none configured */
+	UWORD nodes[MAINT_NODES];       /* allowed nodes */
+	int   nnodes;                   /* 0 = no CTERM access */
+	char  badnode[24];              /* first entry that is no node, or "" */
 	char  latnodes[120];            /* allowed LAT nodes, empty = no LAT */
 	char  password[MAINT_PWMAX];    /* empty = none configured */
 };

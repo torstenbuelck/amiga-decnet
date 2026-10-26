@@ -2,7 +2,8 @@
 ; latd (LAT sessions, dnterm.device units 4 to 7) and, when enabled,
 ; the maintenance login (dnmaint). DECnet-Start runs it; DECnet-Stop
 ; runs DECnet-Stop-Term.
-; Maintenance login settings: ENV:DECnet/maint-node, maint-password
+; Maintenance login settings: ENV:DECnet/maint-node, maint-latnodes,
+; maint-password
 ; Logs: T:latd.log, T:dnmaint.log
 ; (a second latd or dnmaint ends at once: "already running")
 If EXISTS DECnet:C/latd

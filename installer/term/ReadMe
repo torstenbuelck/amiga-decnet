@@ -7,8 +7,8 @@ VMS "SET HOST") or LAT (the protocol of DEC terminal servers). The
 terminal program sees a modem on a serial port: it dials a node name
 or a LAT service instead of a phone number.
 
-The other way round, the optional maintenance login lets one other
-DECnet node log in to an Amiga Shell on this Amiga (see "Maintenance
+The other way round, the optional maintenance login lets the DECnet
+nodes you name log in to an Amiga Shell on this Amiga (see "Maintenance
 login" below; it is off unless you enable it).
 
 
@@ -169,15 +169,18 @@ Ctrl-U, Ctrl-H, Ctrl-E) and Ctrl-Y work as on a VT terminal.
 Maintenance login
 -----------------
 WARNING: the maintenance login gives a full Amiga Shell to whoever
-uses the allowed node and knows the password. From there everything
+uses an allowed node and knows the password. From there everything
 can be done that you can do at this Amiga's keyboard: read, change and
 delete every file, start any program. Enable it only if you need it,
-and only for a node you trust.
+and only for nodes you trust.
 
-- Only one DECnet node may connect; it is asked during the
-  installation. A connect from any other node is refused before
-  anything is asked. Over LAT, the terminal servers you name (see
-  below).
+- Only the DECnet nodes you name may connect; they are asked during
+  the installation (addresses or names from your node list, separated
+  by blanks or commas, e.g. 1.10 VAX1). A connect from any other node
+  is refused before anything is asked. Over LAT, the terminal servers
+  you name (see below). Leave the DECnet nodes empty to allow LAT
+  only; with both lists empty nobody gets in, so the installation
+  offers to switch the login off instead.
 - After the connect comes "Password:" (no echo). Three wrong answers
   end the connection, each after a pause.
 - The password is stored as plain text in ENVARC:DECnet/maint-password
@@ -187,7 +190,7 @@ and only for a node you trust.
   cross the network in clear text, readable by anyone who can watch it.
 - Never use a password you use anywhere else.
 
-On the allowed node, log in like to any CTERM host:
+On an allowed node, log in like to any CTERM host:
 
   $ SET HOST 1.10              (VMS, 1.10 being this Amiga)
   dntool login 1.10            (Linux, from this project)
@@ -228,7 +231,8 @@ the LAN see the service. Leave the list empty if you do not need LAT.
 dnmaint starts with DECnet (DECnet-Start runs
 DECnet:S/DECnet-Start-Term) and writes what happens to T:dnmaint.log:
 every connect with the node address (over LAT: node and port name),
-and whether it was accepted. "dnmaint STOP" ends it until the next
+and whether it was accepted, and at the start an entry in the DECnet
+node list that is neither an address nor a known node name. "dnmaint STOP" ends it until the next
 boot. To change the nodes or the password, or to switch the login off
 for good, run Install-DECnet-Term again.
 

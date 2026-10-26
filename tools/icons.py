@@ -306,7 +306,9 @@ def main():
         c = Canvas()
         motif(c)
         gn, gs, pal, classic, rn, rs = to_images(c)
-        data = mkicon.build(kind, [classic], tool, tts, 4096,
+        # the Installer runs scripts on its stack: 4096 is too little
+        stack = 16384 if tool == "Installer" else 4096
+        data = mkicon.build(kind, [classic], tool, tts, stack,
                             (50, 50, 400, 150) if kind in ("drawer", "disk") else None,
                             glow=([gn, gs], pal))
         open(os.path.join(a.outdir, name + ".info"), "wb").write(data)
