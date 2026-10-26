@@ -1,0 +1,16 @@
+# systemd unit for dnlive (installed by install.sh to /etc/systemd/system)
+[Unit]
+Description=DECnet live traffic display (http://127.0.0.1:8023/)
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/dnlive/dnlive.py
+# own unprivileged user; reading frames needs only CAP_NET_RAW
+DynamicUser=yes
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

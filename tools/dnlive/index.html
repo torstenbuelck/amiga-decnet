@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DECnet live</title>
+<!--
+  dnlive: full-screen traffic display, amber VT terminal style.
+  Laid out for 1366x768 (pi-top 1), scaled to any window. Data from
+  /api (dnlive.py), once a second. No external files: it must work
+  without internet.
+  Copyright (C) 2026  Torsten Bülck (tuti)
+  SPDX-License-Identifier: GPL-2.0-or-later
+-->
+<style>
+:root {
+  --amber: #ffb000;
+  --amber-dim: #a86f00;
+  --amber-faint: #4a3100;
+  --bg: #0c0800;
+  --glow: 0 0 2px rgba(255, 176, 0, .9), 0 0 9px rgba(255, 140, 0, .45);
+}
+html, body {
+  margin: 0; height: 100%; overflow: hidden;
+  background: #000;
+}
+body {
+  font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
+  color: var(--amber);
+  text-shadow: var(--glow);
+}
+#screen {
+  position: absolute; left: 0; top: 0;
+  width: 1366px; height: 768px;
+  transform-origin: 0 0;
+  box-sizing: border-box;
+  padding: 14px 20px 10px;
+  background: radial-gradient(ellipse at center, #191000 0%, var(--bg) 70%, #050300 100%);
+  display: grid;
+  grid-template-rows: 64px 300px 1fr 22px;
+  gap: 8px;
+}
+/* scan lines and a dark rim, drawn once */
+#screen::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background:
+    repeating-linear-gradient(to bottom, rgba(0,0,0,.22) 0 1px, transparent 1px 3px),
+    radial-gradient(ellipse at center, transparent 62%, rgba(0,0,0,.55) 100%);
+}
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 2px solid var(--amber-dim);
+}
+h1 {
+  margin: 0; font-size: 46px; font-weight: bold; letter-spacing: 6px;
+  transform: scaleY(1.15);
+}
+h1 .cur { animation: blink 1.06s steps(1) infinite; }
+#sub { font-size: 17px; color: var(--amber-dim); text-align: center; }
+#clock { font-size: 26px; letter-spacing: 1px; }
+@keyframes blink { 50% { opacity: 0; } }
+
+fieldset {
+  margin: 0; padding: 4px 12px 8px; min-width: 0;
+  border: 2px solid var(--amber-dim);
+  box-shadow: inset 0 0 18px rgba(255, 140, 0, .08);
+}
+legend { padding: 0 8px; font-size: 18px; font-weight: bold; }
+.graphs { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; min-height: 0; }
+.graphs fieldset { display: grid; grid-template-rows: auto 1fr; min-height: 0; }
+.rates { display: flex; gap: 26px; font-size: 22px; margin: 2px 0 4px; white-space: nowrap; }
+.rates b { font-size: 30px; }
+.rates .lbl { color: var(--amber-dim); }
+.plot { position: relative; min-height: 0; }
+canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+.lower { min-height: 0; display: grid; grid-template-columns: 390px 1fr 1fr; gap: 14px; min-height: 0; }
+.lower fieldset { overflow: hidden; }
+pre { margin: 0; font: inherit; font-size: 16px; line-height: 21px; white-space: pre; overflow: hidden; }
+.dim { color: var(--amber-dim); }
+.off { color: var(--amber-dim); text-shadow: none; }
+footer {
+  display: flex; justify-content: space-between; font-size: 15px; color: var(--amber-dim);
+}
+#msg { color: var(--amber); }
+.blk { animation: blink 1.06s steps(1) infinite; }
+</style>
+</head>
+<body>
+<div id="screen">
+  <header>
+    <h1>DECnet live<span class="cur">_</span></h1>
+    <div id="sub">Live-Verkehr im Ausstellungsnetz<br>RetroStar &middot; DECnet Bereich 23</div>
+    <div id="clock"></div>
+  </header>
+
+  <div class="graphs">
+    <fieldset id="if0">
+      <legend>eth0 &middot; Ausstellungs-LAN</legend>
+      <div class="rates"><span><span class="lbl">EIN </span><b class="rx">-</b></span>
+        <span><span class="lbl">AUS </span><b class="tx">-</b></span><span class="st dim"></span></div>
+      <div class="plot"><canvas></canvas></div>
+    </fieldset>
+    <fieldset id="if1">
+      <legend>wlan0 &middot; Uplink zu RetroStar</legend>
+      <div class="rates"><span><span class="lbl">EIN </span><b class="rx">-</b></span>
+        <span><span class="lbl">AUS </span><b class="tx">-</b></span><span class="st dim"></span></div>
+      <div class="plot"><canvas></canvas></div>
+    </fieldset>
+  </div>
+
+  <div class="lower">
+    <fieldset>
+      <legend>Protokolle auf eth0</legend>
+      <pre id="protos"></pre>
+    </fieldset>
+    <fieldset>
+      <legend>$ SHOW KNOWN NODES</legend>
+      <pre id="nodes"></pre>
+    </fieldset>
+    <fieldset>
+      <legend>Ereignisse</legend>
+      <pre id="events"></pre>
+    </fieldset>
+  </div>
+
+  <footer><span id="msg"></span><span id="stats"></span></footer>
+</div>
+
+<script>
+"use strict";
+const AMBER = "#ffb000", DIM = "#a86f00", FAINT = "#4a3100";
+const MONTHS = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+const screenEl = document.getElementById("screen");
+
+function fit() {
+  const s = Math.min(innerWidth / 1366, innerHeight / 768);
+  screenEl.style.transform = "scale(" + s + ")";
+  screenEl.style.left = ((innerWidth - 1366 * s) / 2) + "px";
+  screenEl.style.top = ((innerHeight - 768 * s) / 2) + "px";
+  for (const c of document.querySelectorAll("canvas")) c.dataset.w = "";
+}
+addEventListener("resize", fit);
+fit();
+
+const pad = (n, w) => String(n).padStart(w, "0");
+function clock() {
+  const d = new Date();
+  document.getElementById("clock").textContent =
+    pad(d.getDate(), 2) + "-" + MONTHS[d.getMonth()] + "-" + d.getFullYear() + " " +
+    pad(d.getHours(), 2) + ":" + pad(d.getMinutes(), 2) + ":" + pad(d.getSeconds(), 2);
+}
+setInterval(clock, 1000);
+clock();
+
+/* 12345 -> "12,1 kB/s" */
+function rate(b) {
+  if (b < 1000) return Math.round(b) + " B/s";
+  if (b < 1e6) return (b / 1000).toFixed(b < 1e4 ? 1 : 0).replace(".", ",") + " kB/s";
+  return (b / 1e6).toFixed(2).replace(".", ",") + " MB/s";
+}
+/* a round scale above v: 1, 2, 5 times a power of ten */
+function nice(v) {
+  v = Math.max(v, 1000);
+  const p = Math.pow(10, Math.floor(Math.log10(v)));
+  for (const m of [1, 2, 5, 10]) if (v <= m * p) return m * p;
+  return 10 * p;
+}
+
+/* RX up from the middle line, TX down from it; history scrolls left */
+function graph(canvas, rx, tx) {
+  const W = canvas.offsetWidth, H = canvas.offsetHeight;
+  if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+  const g = canvas.getContext("2d");
+  g.clearRect(0, 0, W, H);
+  const L = 74, mid = Math.round(H / 2), half = mid - 4;
+  const max = nice(Math.max(...rx, ...tx) * 1.1);
+  g.font = "13px 'DejaVu Sans Mono', monospace";
+  g.textBaseline = "middle";
+  /* grid: quarters of the scale, dotted */
+  g.strokeStyle = FAINT; g.lineWidth = 1; g.setLineDash([2, 4]);
+  for (const f of [-1, -.5, .5, 1]) {
+    const y = Math.round(mid - f * half) + .5;
+    g.beginPath(); g.moveTo(L, y); g.lineTo(W, y); g.stroke();
+  }
+  g.setLineDash([]);
+  g.fillStyle = DIM;
+  g.fillText(rate(max).replace("/s", ""), 0, mid - half + 6);
+  g.fillText("EIN", 0, mid - half / 2);
+  g.fillText("AUS", 0, mid + half / 2);
+  g.fillText(rate(max).replace("/s", ""), 0, mid + half - 6);
+  /* bars, one per second, in steps of 4 px (character cell feel) */
+  const n = rx.length, bw = (W - L) / n;
+  g.shadowColor = "rgba(255,150,0,.7)"; g.shadowBlur = 6;
+  for (let i = 0; i < n; i++) {
+    const x = L + i * bw, w = Math.max(1, bw - 1);
+    const hr = Math.ceil(rx[i] / max * half / 4) * 4;
+    const ht = Math.ceil(tx[i] / max * half / 4) * 4;
+    const recent = i >= n - 1;
+    if (hr) { g.fillStyle = recent ? "#ffd27a" : AMBER; g.fillRect(x, mid - hr, w, hr); }
+    if (ht) { g.fillStyle = recent ? "#ffd27a" : DIM; g.fillRect(x, mid + 1, w, ht); }
+  }
+  g.shadowBlur = 0;
+  g.fillStyle = AMBER;
+  g.fillRect(L, mid, W - L, 1);
+  g.fillStyle = DIM;
+  g.fillText("-3 min", L + 2, H - 8);
+  g.textAlign = "right"; g.fillText("jetzt", W - 2, H - 8); g.textAlign = "left";
+}
+
+/* "DECnet  ████▋      12/s" */
+const PARTS = ["", "▏", "▎", "▍", "▌", "▋", "▊", "▉"];
+function bar(v, max, cells) {
+  const e = max ? Math.max(0, Math.min(1, v / max)) * cells * 8 : 0;
+  let s = "█".repeat(Math.floor(e / 8)) + PARTS[Math.round(e) % 8];
+  if (v > 0 && !s) s = "▏";
+  return s.padEnd(cells, " ");
+}
+
+function protos(list) {
+  /* log scale: a hello every few seconds shows next to a file copy */
+  const lg = v => Math.log10(1 + v);
+  const max = Math.max(lg(100000), ...list.map(p => lg(p.bps)));
+  let s = "";
+  for (const p of list) {
+    s += p.name.padEnd(7) + bar(lg(p.bps), max, 13) + " " +
+         p.fps.toFixed(1).replace(".", ",").padStart(6) + " Pak/s\n";
+  }
+  return s;
+}
+
+function nodes(d) {
+  let s = "Knoten  Adresse  Typ\n";
+  const rows = d.nodes.slice(0, 7);
+  for (const n of rows)
+    s += n.name.padEnd(8).slice(0, 8) + n.addr.padEnd(9) + n.kind + "\n";
+  if (d.nodes.length > rows.length) s += "  ... und " + (d.nodes.length - rows.length) + " weitere\n";
+  if (!d.nodes.length) s += "<span class=dim>  (noch keiner gehört)</span>\n";
+  s += "\n<span class=dim>LAT-Dienste:</span>\n";
+  const svcs = [...new Set(d.lat.map(l => l.service))];
+  let line = "";
+  for (const v of svcs) {
+    if ((line + v).length > 36) { s += line + "\n"; line = ""; }
+    line += v + "  ";
+  }
+  s += line || "<span class=dim>  (keine)</span>";
+  return s;
+}
+
+function esc(t) {
+  return t.replace(/[&<>]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;"}[c]));
+}
+function events(list) {
+  const rows = list.slice(-14);
+  let s = "";
+  for (const e of rows) {
+    const d = new Date(e.t * 1000);
+    s += "<span class=dim>" + pad(d.getHours(), 2) + ":" + pad(d.getMinutes(), 2) + ":" +
+         pad(d.getSeconds(), 2) + "</span> " + esc(e.text) + "\n";
+  }
+  return s + "<span class=blk>█</span>";
+}
+
+let fails = 0;
+async function update() {
+  let d;
+  try {
+    const r = await fetch("/api", {cache: "no-store"});
+    d = await r.json();
+    fails = 0;
+  } catch (e) {
+    if (++fails > 2)
+      document.getElementById("msg").textContent =
+        "%DNLIVE-W-NOCONN, keine Verbindung zum Messdienst";
+    return;
+  }
+  if (!d.ifaces) return;
+  d.ifaces.forEach((f, i) => {
+    const el = document.getElementById("if" + i);
+    el.querySelector("legend").firstChild.textContent =
+      f.name + (f.role === "lan" ? " · Ausstellungs-LAN" : " · Uplink zu RetroStar");
+    el.querySelector(".rx").textContent = rate(f.rx[f.rx.length - 1]);
+    el.querySelector(".tx").textContent = rate(f.tx[f.tx.length - 1]);
+    el.querySelector(".st").textContent = f.up ? "" : "KEIN LINK";
+    graph(el.querySelector("canvas"), f.rx, f.tx);
+  });
+  document.getElementById("protos").textContent = protos(d.protos);
+  document.getElementById("nodes").innerHTML = nodes(d);
+  document.getElementById("events").innerHTML = events(d.events);
+  document.getElementById("msg").textContent = d.error ? "%DNLIVE-W-NOCAPT, " + d.error : "";
+  const lat = new Set(d.lat.map(l => l.service)).size;
+  document.getElementById("stats").textContent =
+    d.nodes.length + " DECnet-Knoten  ·  " + lat + " LAT-Dienste  ·  " +
+    d.links + " offene Verbindungen";
+}
+setInterval(update, 1000);
+update();
+</script>
+</body>
+</html>

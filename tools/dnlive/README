@@ -1,0 +1,44 @@
+dnlive - "DECnet live", a traffic display for exhibitions
+==========================================================
+
+A full-screen page in the style of an amber VT terminal that shows what
+happens on the exhibition network, once a second:
+
+- two graphs, the last 3 minutes in (up) and out (down): eth0, the LAN
+  with the old machines, and wlan0, the uplink to RetroStar
+- frames per second on eth0 by protocol: DECnet, LAT, MOP, IP, other
+- "$ SHOW KNOWN NODES": the DECnet nodes heard (their hellos), with
+  names from the file nodes, and the LAT services announced
+- events: nodes coming and going, DECnet logical links opened and closed
+
+Made for a Raspberry Pi 3 in a pi-top 1 (1366x768 screen) with
+Raspberry Pi OS Bookworm (desktop), and nothing installed on top:
+Python 3 standard library, Chromium, curl.
+
+Install (in the unpacked folder):
+
+  sudo ./install.sh                     eth0 = LAN, wlan0 = uplink
+  sudo ./install.sh --lan eth1 --wan wlan0
+
+That installs /opt/dnlive, the service dnlive.service (starts at boot,
+page on http://127.0.0.1:8023/ only) and a desktop autostart that opens
+the page full screen after login (kiosk.sh). It also switches screen
+blanking off. Remove it with  sudo ./install.sh --remove
+
+Operation:
+  systemctl status dnlive               is the service running?
+  journalctl -u dnlive                  its messages
+  Alt+F4                                ends the full-screen browser
+                                        (kiosk.sh opens it again after
+                                        5 s; log out to stop it)
+
+The service runs as its own unprivileged user with only CAP_NET_RAW
+(to read frames). It puts the LAN interface into promiscuous mode, or
+the card would not even take the DECnet hellos (multicast); a bridge
+port is in that mode anyway. Nothing is sent, nothing is stored.
+
+To change the node names, edit /opt/dnlive/nodes (NAME ADDRESS per
+line) and run  sudo systemctl restart dnlive
+
+Copyright (C) 2026  Torsten Bülck (tuti)
+GNU GPL v2 or later.
