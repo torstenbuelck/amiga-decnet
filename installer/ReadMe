@@ -154,6 +154,7 @@ dncheck tells whether a card's driver can carry DECnet. Tested so far
   X-Surf 100            x-surf-100.device 1.16 (iComp)  works
   Ariadne II            ariadne_ii.device 43.12         works
   NE2000 PCMCIA         cnet.device 1.9 (Aminet)        not tested yet
+  Zorro-LAN-IDE         its own SANA-II driver          not tested yet
 
 Except for the real A3000, these tests ran in the emulator Amiberry
 (TAP networking). The driver code is the same as on real hardware, but
