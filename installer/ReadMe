@@ -153,12 +153,18 @@ dncheck tells whether a card's driver can carry DECnet. Tested so far
   X-Surf                x-surf.device 1.16 (iComp)      works
   X-Surf 100            x-surf-100.device 1.16 (iComp)  works
   Ariadne II            ariadne_ii.device 43.12         works
+  3Com 3C589B PCMCIA    3c589.device 1.5 (Aminet)       works on a real
+                                                        A1200 (10BASE-T)
   NE2000 PCMCIA         cnet.device 1.9 (Aminet)        not tested yet
   Zorro-LAN-IDE         its own SANA-II driver          not tested yet
 
-Except for the real A3000, these tests ran in the emulator Amiberry
-(TAP networking). The driver code is the same as on real hardware, but
-the card is emulated; reports from real cards are welcome. cnet.device
+Except for the real A3000 and A1200, these tests ran in the emulator
+Amiberry (TAP networking). The driver code is the same as on real
+hardware, but the card is emulated; reports from real cards are
+welcome. The 3C589B was checked with dncheck and DN: so far. On the
+A1200 it opens only after CardReset (Aminet util/boot/CardReset.lha),
+even after power-on: put "CardReset" into S:User-Startup before
+DECnet-Start. Its BNC port did not send on our card. cnet.device
 keeps its own Ethernet address, so dnetd would have to use its
 promiscuous fallback (dncheck says so).
 
