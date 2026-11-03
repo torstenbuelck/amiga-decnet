@@ -42,7 +42,9 @@ If WARN
       If EXISTS T:dnetd.log
         Type T:dnetd.log
       EndIf
-      Quit 5
+      ; no Quit here: in a script run by Execute it also ends the
+      ; calling scripts, so the boot would stop before LoadWB
+      Skip dnstartend
     EndIf
   EndIf
   Echo "DECnet node {ADDR} started (log: T:dnetd.log)"
@@ -56,9 +58,25 @@ If EXISTS DECnet:S/DECnet-Start-Term
   Execute DECnet:S/DECnet-Start-Term
 EndIf
 
-; DN: file system (dn-handler), mounted once, after dnetd: a
-; failing Mount stops this script
+; DN: file system (dn-handler), mounted once, after dnetd. A failing
+; Mount (RC 20) would also end the scripts that called this one (the
+; boot), and FailAt would change their fail level too, so check first
+; what Mount needs
 If NOT EXISTS ENV:DECnet/dn-mounted
-  Mount DN: FROM DECnet:Storage/Mountlist
-  Echo >ENV:DECnet/dn-mounted "1"
+  Assign >NIL: EXISTS DN:
+  If WARN
+    If EXISTS DECnet:L/dn-handler
+      If EXISTS DECnet:Storage/Mountlist
+        Mount DN: FROM DECnet:Storage/Mountlist
+      EndIf
+    EndIf
+  EndIf
+  Assign >NIL: EXISTS DN:
+  If WARN
+    Echo "DN: is not mounted (needs DECnet:L/dn-handler and DECnet:Storage/Mountlist)"
+  Else
+    Echo >ENV:DECnet/dn-mounted "1"
+  EndIf
 EndIf
+
+Lab dnstartend

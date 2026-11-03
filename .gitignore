@@ -28,3 +28,6 @@ __pycache__/
 /config/nodes
 /src/lat/latd
 /src/lat/lattest
+
+# screenshots from testers and emulator runs
+/screenshots/
