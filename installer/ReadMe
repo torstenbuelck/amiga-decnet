@@ -185,6 +185,22 @@ keeps its own Ethernet address, so dnetd would have to use its
 promiscuous fallback (dncheck says so).
 
 
+Version history
+---------------
+0.2 (not released yet)
+  - ReadMe: how to move Miami, or other network software started from
+    S:Startup-Sequence, below the User-Startup call
+  - ReadMe: the 3Com 3C589B works on real A1200s (OS 3.2.3 and 3.9,
+    with CardReset); Zorro-LAN-IDE listed as not tested yet
+
+0.1 (26.10.2026)
+  - first release for testers: dnetd 0.8, decnet.library 1.2,
+    dn-handler 0.9 (DN:), dncopy 0.3, dndir 0.3, dnnodes 0.4,
+    dncheck 0.5, dnstartup 0.1
+  - tested on AmigaOS 2.04, 3.1 and 3.2.3 in Amiberry and on a
+    real A3000
+
+
 Licence
 -------
 GNU General Public License, version 2 or later. Parts are based on
