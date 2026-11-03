@@ -16,7 +16,8 @@
  * goes in front of the first line that starts network software (AmiTCP,
  * startnet, Roadshow's AddNetInterface, Miami, Genesis), else at the end.
  * An old DECnet block is removed first. The previous file is kept as
- * FILE.bak.
+ * FILE.bak. If a ;BEGIN DECnet line has no ;END DECnet line (or the
+ * other way round), the file is left alone (return code 20).
  *
  * It also looks at S:Startup-Sequence: network software started there
  * before User-Startup comes too early for DECnet (return code 5).
@@ -38,7 +39,7 @@
 
 #include <string.h>
 
-static const char version[] = "$VER: dnstartup 0.1 (23.10.2026)";
+static const char version[] = "$VER: dnstartup 0.2 (03.11.2026)";
 
 #define BEGIN_LINE ";BEGIN DECnet"
 #define END_LINE   ";END DECnet"
@@ -79,6 +80,44 @@ static BOOL starts(const char *line, LONG len, const char *s)
 		if (lower(line[i + k]) != lower(s[k]))
 			return FALSE;
 	return TRUE;
+}
+
+/* Is the trimmed line exactly s, ignoring case (and a trailing CR)? */
+static BOOL isline(const char *line, LONG len, const char *s)
+{
+	LONG i = 0, n = strlen(s);
+
+	while (len > 0 && (line[len - 1] == ' ' || line[len - 1] == '\t'
+	                   || line[len - 1] == '\r'))
+		len--;
+	while (i < len && (line[i] == ' ' || line[i] == '\t'))
+		i++;
+	return len - i == n && starts(line + i, n, s);
+}
+
+/*
+ * Does every ;BEGIN DECnet have its ;END DECnet? If not, the file was
+ * edited by hand and removing the block would take the lines after it.
+ */
+static BOOL blocks_ok(const char *buf, LONG len)
+{
+	LONG i, start;
+	BOOL inblock = FALSE;
+
+	for (start = 0; start < len; start = i + 1) {
+		for (i = start; i < len && buf[i] != '\n'; i++)
+			;
+		if (isline(buf + start, i - start, BEGIN_LINE)) {
+			if (inblock)
+				return FALSE;
+			inblock = TRUE;
+		} else if (isline(buf + start, i - start, END_LINE)) {
+			if (!inblock)
+				return FALSE;
+			inblock = FALSE;
+		}
+	}
+	return !inblock;
 }
 
 static BOOL comment(const char *line, LONG len)
@@ -165,7 +204,7 @@ static LONG insert_pos(const char *buf, LONG len)
 	for (start = 0; start < len; start = i + 1) {
 		for (i = start; i < len && buf[i] != '\n'; i++)
 			;
-		if (starts(buf + start, i - start, BEGIN_LINE))
+		if (isline(buf + start, i - start, BEGIN_LINE))
 			continue;               /* ours, removed anyway */
 		if (starts(buf + start, i - start, ";BEGIN "))
 			block = start;
@@ -232,6 +271,12 @@ int main(void)
 	}
 
 	buf = read_file(file, &len);
+	if (buf && !blocks_ok(buf, len)) {
+		Printf("%s: a \"" BEGIN_LINE "\" line has no \"" END_LINE "\" line\n"
+		       "(or the other way round); fix the file by hand, it is unchanged\n",
+		       (STRPTR)file);
+		goto out;
+	}
 	if (buf) {
 		strcpy(bak, file);
 		strcat(bak, ".bak");
@@ -258,11 +303,11 @@ int main(void)
 			;
 		n = i - start;
 		if (inblock) {
-			if (starts(buf + start, n, END_LINE))
+			if (isline(buf + start, n, END_LINE))
 				inblock = FALSE;
 			continue;
 		}
-		if (starts(buf + start, n, BEGIN_LINE)) {
+		if (isline(buf + start, n, BEGIN_LINE)) {
 			inblock = had = TRUE;
 			continue;
 		}

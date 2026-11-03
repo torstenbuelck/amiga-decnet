@@ -73,9 +73,11 @@
 	)
 	(if (askbool
 		(prompt "Remove DECnet?\n\n"
-		        "This stops dnetd, takes DECnet out of S:User-Startup and deletes\n"
-		        "\"" #old "\" and LIBS:decnet.library.\n\n"
-		        "Your node list ENVARC:DECnet/nodes is kept.")
+		        "This stops dnetd, takes DECnet out of S:User-Startup and deletes "
+		        "the DECnet files in \"" #old "\", LIBS:decnet.library and, if "
+		        "installed, DECnet-Term (DEVS:dnterm.device).\n\n"
+		        "Other files in \"" #old "\" and your node list "
+		        "ENVARC:DECnet/nodes are kept.")
 		(help "Answer \"Remove\" to remove DECnet from this Amiga.")
 		(choices "Remove" "Cancel")
 		(default 0))
@@ -83,12 +85,55 @@
 			(execute (tackon #old "S/DECnet-Stop"))
 			(run (cat "\"" (tackon #old "C/dnstartup") "\" REMOVE"))
 			(delete "LIBS:decnet.library" (optional "force") (prompt "") (help ""))
-			(delete #old (all) (optional "force") (prompt "") (help ""))
-			(delete (cat #old ".info") (optional "force") (prompt "") (help ""))
+			; only the files DECnet and DECnet-Term installed: the drawer
+			; may hold the user's own files (missing files are no error)
+			(delete (tackon #old "C/dnetd") (optional "force") (prompt "") (help ""))
+			(delete (tackon #old "C/dncheck") (optional "force") (prompt "") (help ""))
+			(delete (tackon #old "C/dncopy") (optional "force") (prompt "") (help ""))
+			(delete (tackon #old "C/dndir") (optional "force") (prompt "") (help ""))
+			(delete (tackon #old "C/dnnodes") (optional "force") (prompt "") (help ""))
+			(delete (tackon #old "C/dnstartup") (optional "force") (prompt "") (help ""))
+			(delete (tackon #old "C/dntermpatch") (optional "force") (prompt "") (help ""))
+			(delete (tackon #old "C/latd") (optional "force") (prompt "") (help ""))
+			(delete (tackon #old "C/dnmaint") (optional "force") (prompt "") (help ""))
+			(delete (tackon #old "L/dn-handler") (optional "force") (prompt "") (help ""))
+			(delete (tackon #old "S/DECnet-Start") (optional "force") (prompt "") (help ""))
+			(delete (tackon #old "S/DECnet-Stop") (optional "force") (prompt "") (help ""))
+			(delete (tackon #old "S/DECnet-Start-Term") (optional "force") (prompt "") (help ""))
+			(delete (tackon #old "S/DECnet-Stop-Term") (optional "force") (prompt "") (help ""))
+			(delete (tackon #old "Storage/Mountlist") (optional "force") (prompt "") (help ""))
+			(delete (tackon #old "Icons/Disk.info") (optional "force") (prompt "") (help ""))
+			(delete (tackon #old "Icons/Node.info") (optional "force") (prompt "") (help ""))
+			(delete (tackon #old "Icons/Dir.info") (optional "force") (prompt "") (help ""))
+			(delete (tackon #old "Icons/Text.info") (optional "force") (prompt "") (help ""))
+			(delete (tackon #old "Icons/Picture.info") (optional "force") (prompt "") (help ""))
+			(delete (tackon #old "Icons/File.info") (optional "force") (prompt "") (help ""))
+			(delete (tackon #old "Icons/DECnet.info") (optional "force") (prompt "") (help ""))
+			(delete (tackon #old "ReadMe") (optional "force") (prompt "") (help ""))
+			(delete (tackon #old "ReadMe.info") (optional "force") (prompt "") (help ""))
+			; DECnet-Term: its files in the drawer are gone above
+			(delete "DEVS:dnterm.device" (optional "force") (prompt "") (help ""))
+			(delete "ENVARC:DECnet/maint-node" (optional "force") (prompt "") (help ""))
+			(delete "ENVARC:DECnet/maint-latnodes" (optional "force") (prompt "") (help ""))
+			(delete "ENVARC:DECnet/maint-password" (optional "force") (prompt "") (help ""))
+			(delete "ENV:DECnet/maint-node" (optional "force") (prompt "") (help ""))
+			(delete "ENV:DECnet/maint-latnodes" (optional "force") (prompt "") (help ""))
+			(delete "ENV:DECnet/maint-password" (optional "force") (prompt "") (help ""))
+			; the drawers only if empty now: AmigaDOS Delete keeps a drawer
+			; with files in it, and its error does not stop the Installer
+			(run (cat "Delete >NIL: \"" (tackon #old "C") "\""))
+			(run (cat "Delete >NIL: \"" (tackon #old "S") "\""))
+			(run (cat "Delete >NIL: \"" (tackon #old "L") "\""))
+			(run (cat "Delete >NIL: \"" (tackon #old "Storage") "\""))
+			(run (cat "Delete >NIL: \"" (tackon #old "Icons") "\""))
+			(run (cat "Delete >NIL: \"" #old "\""))
 			(set #left "")
 			(if (exists #old)
-				(set #left (cat "\n\nThe empty drawer \"" #old "\" is still in use "
-				                "(the Shell's command path); delete it after the reboot."))
+				(set #left (cat "\n\nThe drawer \"" #old "\" is kept: it still holds "
+				                "files that are not part of DECnet, or its C drawer is "
+				                "in the Shell's command path (then delete it after the "
+				                "reboot)."))
+				(delete (cat #old ".info") (optional "force") (prompt "") (help ""))
 			)
 			(exit "DECnet has been removed. DN: and the DECnet: assign stay "
 			      "until the next reboot." #left (quiet))
