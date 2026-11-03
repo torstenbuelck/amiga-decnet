@@ -252,6 +252,26 @@ A3000 with AmigaOS 3.5, from OpenVMS 7.2 (SET HOST) and from Linux
 (SET HOST/LAT). Reports with other terminal programs and hosts are welcome.
 
 
+Version history
+---------------
+0.6 (26.10.2026)
+  - first release for testers: dnterm.device 0.3, dntermpatch 0.1,
+    latd 0.2, dnmaint 0.5; needs DECnet 0.1 or newer
+  - the maintenance login takes a list of DECnet nodes; leave it
+    empty for a LAT-only login
+
+Development versions, not released:
+0.5 (25.10.2026)  maintenance login also over LAT
+0.4 (25.10.2026)  LAT: units 4 to 7 of dnterm.device dial LAT
+                  services through latd
+0.3 (24.10.2026)  optional maintenance login (dnmaint): DECnet nodes
+                  log in to an Amiga Shell
+0.2 (24.10.2026)  dntermpatch for programs with serial.device built
+                  in (VAXterm); dnterm.device takes short open requests
+0.1 (24.10.2026)  dnterm.device: CTERM sessions for Amiga terminal
+                  programs
+
+
 Licence
 -------
 GNU General Public License, version 2 or later. The CTERM messages
