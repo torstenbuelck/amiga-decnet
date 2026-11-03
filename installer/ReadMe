@@ -30,6 +30,19 @@ follows from its DECnet address. TCP/IP then uses this address as well;
 if your DHCP server hands out a fixed IP address by Ethernet address,
 change that entry. Reboot after the installation.
 
+Miami (and other software that starts the network from
+S:Startup-Sequence) comes too early for DECnet: Startup-Sequence runs
+S:User-Startup only near its end. The installer warns when it finds
+such a line, but it never changes S:Startup-Sequence. Do it yourself:
+make a copy first, keep a boot disk at hand, then move the line that
+starts the network (e.g. "Execute S/MIAMITCP-Startup") below the lines
+
+  IF EXISTS S:User-Startup
+    Execute S:User-Startup
+  EndIF
+
+so that DECnet, which starts in S:User-Startup, comes first.
+
 Two programs show their output in a window of their own:
 
   DECnet-Check  dncheck's test of the card. The installation goes on
