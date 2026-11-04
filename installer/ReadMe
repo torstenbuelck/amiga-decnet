@@ -138,12 +138,16 @@ Using it
                                     progress line in the Shell)
   dncopy VAX1 "TEST.TXT;2" RAM:test.txt
                                     a certain VMS version
+  dndir VAX1 "**.LHA;**"            all versions of all .LHA files
 
 VMS names with a version number need quotes in the Shell, for dncopy
 and dndir alike: the Shell reads ";" as the start of a comment and
-drops the rest of the line (dncopy then says "required argument
-missing"). DN: always takes the newest version of a file; a version
-number given there is ignored.
+drops the rest of the line. dncopy then says "required argument
+missing", but dndir quietly lists the newest version only. Inside
+quotes the Shell takes "*" as an escape character, so write every "*"
+twice there; without quotes a single "*" is fine (dndir VAX1 *.LHA).
+DN: always takes the newest version of a file; a version number given
+there is ignored.
 
 Subdirectories are drawers: DN:VAX1/A/B is [.A.B]. DN: shows its own
 disk icon, an icon for every node and, inside a node, an icon for every
