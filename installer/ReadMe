@@ -132,22 +132,29 @@ Using it
   Copy RAM:test.txt DN:VAX1/        copy a file to VAX1
   dndir VAX1 [GUEST]*.*             directory listing in VMS syntax
   dncopy VAX1 TEST.TXT RAM:test.txt
+                                    the newest version of TEST.TXT
   dncopy VAX1 [GUEST]TEST.TXT RAM:  into a drawer: keeps the name
   dncopy VAX1 BIG.DAT RAM:big.dat PROGRESS=WINDOW
                                     with a progress window (TEXT: a
                                     progress line in the Shell)
+
+Without a version number, VMS always means the newest version of a
+file: dncopy, dndir and DN: all work that way, so you hardly ever need
+one. DN: has no way to reach older versions; a version number given
+there is ignored.
+
+Only to reach an older version with dncopy or dndir, give its number
+and put the name in quotes:
+
   dncopy VAX1 "TEST.TXT;2" RAM:test.txt
-                                    a certain VMS version
+                                    version 2 of TEST.TXT
   dndir VAX1 "**.LHA;**"            all versions of all .LHA files
 
-VMS names with a version number need quotes in the Shell, for dncopy
-and dndir alike: the Shell reads ";" as the start of a comment and
-drops the rest of the line. dncopy then says "required argument
-missing", but dndir quietly lists the newest version only. Inside
+The quotes are needed because the Shell reads ";" as the start of a
+comment and drops the rest of the line: dncopy then says "required
+argument missing", and dndir lists the newest version only. Inside
 quotes the Shell takes "*" as an escape character, so write every "*"
 twice there; without quotes a single "*" is fine (dndir VAX1 *.LHA).
-DN: always takes the newest version of a file; a version number given
-there is ignored.
 
 Subdirectories are drawers: DN:VAX1/A/B is [.A.B]. DN: shows its own
 disk icon, an icon for every node and, inside a node, an icon for every
