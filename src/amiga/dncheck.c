@@ -9,7 +9,10 @@
  *      (best case: dnetd runs normally)
  *   3. S2_ADDMULTICASTADDRESS takes the DECnet "all endnodes" multicast
  *   4. if the address was not taken: the device opens promiscuous, which is
- *      dnetd's fallback (raw frames with our own source address)
+ *      dnetd's fallback (raw frames with our own source address), and
+ *      sends a raw test frame (to our own DECnet address, so no node takes
+ *      it); some drivers refuse all I/O on a unit whose address was not
+ *      configured (cnet.device 1.9)
  *   5. DECnet frames (ethertype 0x6003, e.g. router hellos) actually arrive
  *      within WAIT seconds (default 20, 0 skips the test; skipped as well
  *      while dnetd runs, which takes the frames itself)
@@ -40,6 +43,7 @@
 #include <exec/types.h>
 #include <exec/memory.h>
 #include <exec/io.h>
+#include <exec/errors.h>
 #include <dos/dos.h>
 #include <dos/rdargs.h>
 #include <devices/sana2.h>
@@ -56,7 +60,7 @@
 #define DN_ETHERTYPE 0x6003
 #define FRAMELEN     1518
 
-static const char version[] = "$VER: dncheck 0.5 (24.10.2026)";
+static const char version[] = "$VER: dncheck 0.6 (04.11.2026)";
 
 static const UBYTE all_endnodes[6] = { 0xab, 0x00, 0x00, 0x04, 0x00, 0x00 };
 
@@ -67,6 +71,8 @@ static UBYTE mymac[6];
 static UBYTE *buf;
 static struct TagItem *buffertags;
 static BOOL read_stuck;       /* the driver still owns req and buf */
+static BYTE read_err;         /* io_Error of a read that failed by itself */
+static LONG read_werr;
 
 static void print_mac(const UBYTE *m)
 {
@@ -161,6 +167,10 @@ static BOOL wait_frame(LONG secs, BOOL raw, UBYTE *src)
 		read_stuck = TRUE;
 		return FALSE;
 	}
+	if (req->ios2_Req.io_Error != 0 && req->ios2_Req.io_Error != IOERR_ABORTED) {
+		read_err = req->ios2_Req.io_Error;
+		read_werr = req->ios2_WireError;
+	}
 	if (req->ios2_Req.io_Error == 0) {
 		got = TRUE;
 		if (raw && req->ios2_DataLength >= 14)
@@ -169,6 +179,26 @@ static BOOL wait_frame(LONG secs, BOOL raw, UBYTE *src)
 			memcpy(src, req->ios2_SrcAddr, 6);
 	}
 	return got;
+}
+
+/* Sends one raw DECnet frame to our own DECnet address: no other node
+   has it, so nobody takes the frame. FALSE if the driver refuses it. */
+static BOOL test_write(void)
+{
+	memset(buf, 0, 60);
+	memcpy(buf, mymac, 6);
+	memcpy(buf + 6, mymac, 6);
+	buf[12] = DN_ETHERTYPE >> 8;
+	buf[13] = DN_ETHERTYPE & 0xff;
+	req->ios2_Req.io_Command = CMD_WRITE;
+	req->ios2_Req.io_Flags = SANA2IOF_RAW;
+	req->ios2_PacketType = DN_ETHERTYPE;
+	memcpy(req->ios2_DstAddr, mymac, 6);
+	req->ios2_DataLength = 60;
+	req->ios2_Data = buf;
+	BeginIO((struct IORequest *)req);   /* not SendIO: it clears io_Flags */
+	WaitIO((struct IORequest *)req);
+	return req->ios2_Req.io_Error == 0;
 }
 
 int main(void)
@@ -182,7 +212,9 @@ int main(void)
 	struct Sana2DeviceQuery query;
 	UBYTE current[6], factory[6], src[6];
 	BOOL taken = FALSE, foreign = FALSE, multicast = FALSE;
-	BOOL fallback = FALSE, framed = FALSE, dnetd;
+	BOOL fallback = FALSE, framed = FALSE, nosend = FALSE, dnetd;
+	BYTE cfg_err;
+	LONG cfg_werr;
 	int rc = 20;
 
 	(void)version;
@@ -254,9 +286,10 @@ int main(void)
 	Printf(": ");
 	req->ios2_Req.io_Command = S2_CONFIGINTERFACE;
 	memcpy(req->ios2_SrcAddr, mymac, 6);
-	if (DoIO((struct IORequest *)req) != 0 &&
-	    (req->ios2_WireError == S2WERR_IS_CONFIGURED ||
-	     req->ios2_Req.io_Error == S2ERR_BAD_STATE))
+	cfg_err = DoIO((struct IORequest *)req);
+	cfg_werr = req->ios2_WireError;
+	if (cfg_err != 0 &&
+	    (cfg_werr == S2WERR_IS_CONFIGURED || cfg_err == S2ERR_BAD_STATE))
 		foreign = TRUE;
 	if (station_address(current, factory) && memcmp(current, mymac, 6) == 0) {
 		taken = TRUE;
@@ -267,6 +300,10 @@ int main(void)
 		Printf("   Other network software (AmiTCP?) has started first and set ");
 		print_mac(current);
 		Printf(".\n   Reboot, run dncheck before the network starts.\n");
+	} else if (cfg_err == S2ERR_BAD_ADDRESS) {
+		Printf("the driver rejects it (error %ld/%ld)\n", (LONG)cfg_err, cfg_werr);
+		Printf("   DECnet addresses start with AA; some drivers wrongly take\n"
+		       "   that for an invalid address (cnet.device 1.9).\n");
 	} else {
 		Printf("the driver keeps its own address\n");
 	}
@@ -297,6 +334,17 @@ int main(void)
 		}
 		fallback = TRUE;
 		Printf("ok\n");
+		Printf("   Sending a test frame: ");
+		if (test_write()) {
+			Printf("ok\n");
+		} else {
+			nosend = TRUE;
+			Printf("FAILED (");
+			print_error();
+			Printf(")\n");
+			if (req->ios2_WireError == S2WERR_NOT_CONFIGURED)
+				Printf("   The driver works only after it has taken an address.\n");
+		}
 	} else {
 		Printf("4. Promiscuous fallback not needed\n");
 	}
@@ -306,7 +354,10 @@ int main(void)
 	Forbid();
 	dnetd = FindPort((STRPTR)"DECnet") != NULL;
 	Permit();
-	if (dnetd && wait > 0) {
+	if (nosend) {
+		Printf("5. Traffic test skipped: the driver cannot send\n");
+		wait = 0;
+	} else if (dnetd && wait > 0) {
 		Printf("5. Traffic test skipped: dnetd is running and receives them\n");
 		wait = 0;
 	} else if (wait > 0) {
@@ -321,6 +372,8 @@ int main(void)
 			if (a)
 				Printf(" (node %ld.%ld)", (LONG)(a >> 10), (LONG)(a & 0x3ff));
 			Printf("\n");
+		} else if (read_err) {
+			Printf("read FAILED (error %ld/%ld)\n", (LONG)read_err, read_werr);
 		} else {
 			Printf("nothing\n");
 			Printf("   No DECnet router on this LAN, or the frames are not delivered.\n");
@@ -337,10 +390,19 @@ int main(void)
 	if (taken && multicast && (framed || wait == 0)) {
 		Printf("the driver fully supports DECnet.\n");
 		rc = 0;
+	} else if (nosend) {
+		Printf("this driver cannot carry DECnet: it neither takes the\n"
+		       "        DECnet address nor sends without it.\n");
+		if (cfg_err == S2ERR_BAD_ADDRESS)
+			Printf("        For cnet.device 1.9 see \"Network cards\" in the ReadMe.\n");
+		rc = 10;
 	} else if (foreign) {
 		Printf("not decided yet, the unit was configured by other software.\n"
 		       "        Reboot and run dncheck before the network starts.\n");
 		rc = 5;
+	} else if (fallback && read_err) {
+		Printf("this driver cannot carry DECnet: reading fails in fallback mode.\n");
+		rc = 10;
 	} else if (fallback) {
 		Printf("usable in fallback mode (promiscuous, raw frames).\n"
 		       "        Whether the driver sends our source address unchanged\n"

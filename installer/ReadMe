@@ -203,9 +203,14 @@ fetched the node list with dnnodes and logged in to a VAX with
 VAXterm (after dntermpatch, DECnet-Term package). On the
 A1200 it opens only after CardReset (Aminet util/boot/CardReset.lha),
 even after power-on: put "CardReset" into S:User-Startup before
-DECnet-Start. Its BNC port did not send on our card. cnet.device
-keeps its own Ethernet address, so dnetd would have to use its
-promiscuous fallback (dncheck says so).
+DECnet-Start. Its BNC port did not send on our card.
+
+cnet.device 1.9 (NE2000 PCMCIA cards) has a bug: it takes every
+Ethernet address that starts with a byte of 80 or more (hex) for
+invalid, DECnet's AA-00-04-00-xx-xx among them. DECnet then does not
+work, not even in dnetd's fallback mode; dncheck says "the driver
+rejects it". TCP/IP is not affected (it uses the card's own address).
+A fixed cnet.device is being tested.
 
 
 Version history
