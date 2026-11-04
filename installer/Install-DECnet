@@ -387,7 +387,10 @@
 		)
 	)
 	(makedir "ENV:DECnet" (prompt "") (help ""))
-	(copyfiles (prompt "") (help "") (source "ENVARC:DECnet/nodes") (dest "ENV:DECnet"))
+	; in "Pretend to install" the textfile above writes nothing
+	(if (exists "ENVARC:DECnet/nodes")
+		(copyfiles (prompt "") (help "") (source "ENVARC:DECnet/nodes") (dest "ENV:DECnet"))
+	)
 
 	; remember the answers as defaults for the next update
 	(set #var "Device") (set #val #device) (P_SAVEVAR)
