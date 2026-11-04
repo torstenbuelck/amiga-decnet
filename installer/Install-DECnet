@@ -443,8 +443,17 @@
 			(if #running
 				(execute "DECnet:S/DECnet-Stop")
 			)
-			(execute "DECnet:S/DECnet-Start")
-			(set #from (askstring
+			; DECnet-Start returns 5 (WARN) when dnetd does not run; then
+			; asking another node for names makes no sense (kept flat: deep
+			; nesting overflows the Installer's stack)
+			(set #from "")
+			(set #rc (execute "DECnet:S/DECnet-Start"))
+			(if (<> #rc 0)
+				(message "DECnet did not start: dnetd could not use the network card.\n\n"
+				         "T:dnetd.log tells why (in a Shell: Type T:dnetd.log). "
+				         "Check the driver and unit, then run the installation again; "
+				         "DECnet also tries again at the next boot."))
+			(if (= #rc 0) (set #from (askstring
 				(prompt "Copy node names from another DECnet node?\n\n"
 				        "Address (area.node) of a router or VMS system that knows "
 				        "the network. Leave it empty to skip.")
@@ -454,7 +463,7 @@
 				      "Repeat it later with\n  dnnodes FROM=node REACHABLE UPDATE\n\n"
 				      @askstring-help)
 				(default "")
-			))
+			)))
 			(if (<> #from "")
 				(
 				(working "Waiting 15 seconds for the DECnet router ...")

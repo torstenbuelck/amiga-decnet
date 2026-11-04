@@ -80,3 +80,7 @@ If NOT EXISTS ENV:DECnet/dn-mounted
 EndIf
 
 Lab dnstartend
+; return code for scripts that run this one: 0 when dnetd runs, 5 (WARN)
+; when not. It comes from the last command, not from Quit (see above);
+; WARN does not stop the boot (FailAt 10)
+dnetd >NIL: CHECK

@@ -152,8 +152,10 @@ The icons DN: uses are in DECnet/Icons; you may replace them.
 
 dnetd writes its messages to T:dnetd.log. If it does not start (wrong
 driver or unit, for example), DECnet-Start says so and shows the log.
-"dnetd CHECK" tells in a script whether dnetd runs (return code 0,
-otherwise 5); DECnet-Stop, or "dnetd STOP", ends it.
+DECnet-Start returns 0 when dnetd runs and 5 (WARN) when not, so a
+script that runs it can test "If WARN"; the boot goes on either way.
+"dnetd CHECK" tells the same at any time (return code 0, otherwise 5);
+DECnet-Stop, or "dnetd STOP", ends it.
 
 
 Network cards
@@ -196,7 +198,9 @@ Version history
     with CardReset); Zorro-LAN-IDE listed as not tested yet
   - DECnet-Start: if dnetd cannot start (e.g. the PCMCIA card is
     missing) or DN: cannot be mounted, the boot goes on (it stopped
-    before LoadWB)
+    before LoadWB); it returns 5 (WARN) when dnetd does not run
+  - Installer: if "Start" cannot start dnetd, it says so and points to
+    T:dnetd.log (it went on and offered to copy node names)
   - Remove deletes only DECnet's own files (it deleted the whole
     DECnet drawer, with the user's files in it), and DECnet-Term with
     DEVS:dnterm.device
