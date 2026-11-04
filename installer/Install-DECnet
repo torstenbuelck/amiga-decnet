@@ -1,4 +1,4 @@
-; $VER: Install-DECnet 0.1 (23.10.2026)
+; $VER: Install-DECnet 0.2 (04.11.2026)
 ;
 ; Installer script for the Amiga DECnet Phase IV endnode stack.
 ; Needs the Commodore Installer (V43 recommended) and AmigaOS 2.04.
@@ -15,7 +15,7 @@
 ; Copyright (C) 2026  Torsten Bülck (tuti)
 ; SPDX-License-Identifier: GPL-2.0-or-later
 
-(set #version "0.1")
+(set #version "0.2")
 (set @app-name "DECnet")
 (set @default-dest "SYS:")
 

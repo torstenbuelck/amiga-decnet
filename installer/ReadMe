@@ -191,7 +191,7 @@ promiscuous fallback (dncheck says so).
 
 Version history
 ---------------
-0.2 (not released yet)
+0.2 (04.11.2026)
   - ReadMe: how to move Miami, or other network software started from
     S:Startup-Sequence, below the User-Startup call
   - ReadMe: the 3Com 3C589B works on real A1200s (OS 3.2.3 and 3.9,
