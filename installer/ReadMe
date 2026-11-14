@@ -192,6 +192,9 @@ dncheck tells whether a card's driver can carry DECnet. Tested so far
   3Com 3C589B PCMCIA    3c589.device 1.5 (Aminet)       works on real
                                                         A1200s (10BASE-T,
                                                         OS 3.2.3, 3.9)
+  3Com 3C589B/D PCMCIA  3c589.device 1.5auto3           works on a real
+                                                        A1200 (10BASE-T
+                                                        and BNC, 3.2.3)
   NE2000 PCMCIA         cnet.device 1.9 (Aminet)        not tested yet
   Zorro-LAN-IDE         its own SANA-II driver          not tested yet
 
@@ -203,7 +206,15 @@ fetched the node list with dnnodes and logged in to a VAX with
 VAXterm (after dntermpatch, DECnet-Term package). On the
 A1200 it opens only after CardReset (Aminet util/boot/CardReset.lha),
 even after power-on: put "CardReset" into S:User-Startup before
-DECnet-Start. Its BNC port did not send on our card.
+DECnet-Start.
+
+On BNC (coax) networks 3c589.device 1.5 does not work: it reads the
+card's link-beat bit right after power-on, when it does not yet mean
+anything, and then stays on 10BASE-T; the card neither sends nor
+receives, and the BNC dongle's LED stays off. 3c589.device 1.5auto3
+(3c589auto.lha, with source and patch, GPL) waits for a real 10BASE-T
+link for up to 3 seconds and takes BNC when there is none. Copy it
+over DEVS:networks/3c589.device; keep that file name.
 
 cnet.device 1.9 (NE2000 PCMCIA cards) has a bug: it takes every
 Ethernet address that starts with a byte of 80 or more (hex) for

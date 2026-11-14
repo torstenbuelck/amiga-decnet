@@ -1,0 +1,152 @@
+diff -u 1.5/Source/device.c 1.5auto3/Source/device.c
+--- 1.5/Source/device.c
++++ 1.5auto3/Source/device.c
+@@ -61,8 +61,8 @@
+    struct DevBase *base REG(BASE_REG));
+ VOID DeleteDevice(struct DevBase *base);
+ 
+-extern const APTR vectors[];
+-extern const APTR init_table[];
++static const APTR vectors[];
++static const APTR init_table[];
+ 
+ 
+ /* Return an error immediately if someone tries to run the device */
+@@ -75,7 +75,7 @@
+ #define DEVICE_NAME "3c589.device"
+ 
+ const TEXT device_name[]=DEVICE_NAME;
+-static const TEXT version_string[]=DEVICE_NAME " 1.5 (3.2.2010)\n";
++static const TEXT version_string[]=DEVICE_NAME " 1.5auto3 (14.11.26)\n";
+ static const TEXT card_name[]=CARDRESNAME;
+ static const TEXT utility_name[]=UTILITYNAME;
+ static const TEXT pccard_name[]=PCCARDNAME;
+@@ -271,7 +271,7 @@
+ 
+    if(error==0)
+    {
+-      request->ios2_Req.io_Unit=(APTR)unit=GetUnit(unit_num,base);
++      unit=GetUnit(unit_num,base); request->ios2_Req.io_Unit=(APTR)unit;
+       if(unit==NULL)
+          error=IOERR_OPENFAIL;
+    }
+diff -u 1.5/Source/request.c 1.5auto3/Source/request.c
+--- 1.5/Source/request.c
++++ 1.5auto3/Source/request.c
+@@ -1302,15 +1302,15 @@
+    /* Set structure size twice */
+ 
+    info=request->io_Data;
+-   request->io_Actual=info->SizeAvailable=
+-      (ULONG)OFFSET(NSDeviceQueryResult,SupportedCommands)+sizeof(APTR);
++   request->io_Actual=info->nsdqr_SizeAvailable=
++      (ULONG)OFFSET(NSDeviceQueryResult,nsdqr_SupportedCommands)+sizeof(APTR);
+ 
+    /* Report device details */
+ 
+-   info->DeviceType=NSDEVTYPE_SANA2;
+-   info->DeviceSubType=0;
++   info->nsdqr_DeviceType=NSDEVTYPE_SANA2;
++   info->nsdqr_DeviceSubType=0;
+ 
+-   info->SupportedCommands=(APTR)supported_commands;
++   info->nsdqr_SupportedCommands=(APTR)supported_commands;
+ 
+    /* Return */
+ 
+diff -u 1.5/Source/unit.c 1.5auto3/Source/unit.c
+--- 1.5/Source/unit.c
++++ 1.5auto3/Source/unit.c
+@@ -632,6 +632,24 @@
+ *
+ */
+ 
++#define LINK_SETTLE_MS 300   /* ignore BEAT this long after enabling it */
++#define LINK_STABLE_MS 300   /* BEAT must stay set this long */
++#define LINK_PROBE_MS 3000   /* give up after this; a GS305E switch port
++                                gave link pulses only ~950 ms after TP
++                                was selected */
++
++static ULONG ElapsedMS(struct timeval *start,struct DevBase *base)
++{
++   struct timeval now;
++
++   GetSysTime(&now);
++   SubTime(&now,start);
++   /* secs*1000 by shifts, micro/1024 as ms (2.4% short): the 68000
++      build has no 32-bit divide without libgcc */
++   return (now.tv_secs<<10)-(now.tv_secs<<4)-(now.tv_secs<<3)
++      +(now.tv_micro>>10);
++}
++
+ static VOID InitialiseAdapter(struct DevUnit *unit,struct DevBase *base)
+ {
+    volatile UBYTE *io_base;
+@@ -662,12 +680,48 @@
+ 
+    /* Get transceivers with an active link */
+ 
+-   LEWordOut(io_base+EL3REG_COMMAND,EL3CMD_SELECTWINDOW|4);
+    link=0;
+-   media_status=LEWordIn(io_base+EL3REG_MEDIA);
+-   if((media_status&EL3REG_MEDIAF_BEAT)!=0)
+-      link|=EL3REG_CONFIGF_HASTP;
+-   LEWordOut(io_base+EL3REG_COMMAND,EL3CMD_SELECTWINDOW|0);
++   if((media&EL3REG_CONFIGF_HASTP)!=0)
++   {
++      struct timeval start;
++      ULONG t,run_start=0;
++      BOOL in_run=FALSE;
++
++      /* Select TP with link beat detection. The BEAT bit is already set
++         in the card's power-on state (MEDIA 0x2800 even with only a BNC
++         dongle), so ignore it until the link test has settled, then
++         require it to stay set (link pulses every 16 ms) */
++
++      LEWordOut(io_base+EL3REG_ADDRCONFIG,EL3REG_ADDRCONFIG_XCVRTP);
++      LEWordOut(io_base+EL3REG_COMMAND,EL3CMD_STOPCOAX|0);
++      LEWordOut(io_base+EL3REG_COMMAND,EL3CMD_SELECTWINDOW|4);
++      media_status=LEWordIn(io_base+EL3REG_MEDIA);
++      LEWordOut(io_base+EL3REG_MEDIA,
++         EL3REG_MEDIAF_BEATENABLE|EL3REG_MEDIAF_JABBERENABLE);
++      GetSysTime(&start);
++      do
++      {
++         BOOL beat=
++            (LEWordIn(io_base+EL3REG_MEDIA)&EL3REG_MEDIAF_BEAT)!=0;
++
++         t=ElapsedMS(&start,base);
++         if(t>=LINK_SETTLE_MS)
++         {
++            if(!beat)
++               in_run=FALSE;
++            else if(!in_run)
++            {
++               in_run=TRUE;
++               run_start=t;
++            }
++            else if(t-run_start>=LINK_STABLE_MS)
++               link|=EL3REG_CONFIGF_HASTP;
++         }
++      }
++      while(link==0&&t<LINK_PROBE_MS);
++      LEWordOut(io_base+EL3REG_MEDIA,media_status);
++      LEWordOut(io_base+EL3REG_COMMAND,EL3CMD_SELECTWINDOW|0);
++   }
+ 
+    new_media=media&link;
+    if((new_media)!=0)
+@@ -692,6 +746,13 @@
+       new_media&=media;
+       if(new_media!=0)
+          media=new_media;
++
++      /* Autoselect without TP link: prefer coax (the card's power-on
++         default is TP, which leaves BNC users without network) */
++
++      if((config&EL3REG_ADDRCONFIGF_AUTOSELECT)!=0
++         &&(media&EL3REG_CONFIGF_HASCOAX)!=0)
++         media=EL3REG_CONFIGF_HASCOAX;
+    }
+ 
+    /* Prioritised choice from remaining transceivers */

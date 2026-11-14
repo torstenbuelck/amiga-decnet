@@ -1,0 +1,69 @@
+3c589.device 1.5auto3 - picks 10BASE-T or BNC by itself
+========================================================
+
+This is Neil Cafferkey's 3c589.device 1.5 (Aminet driver/net/3c589.lha,
+GPL) with one change: when the card is opened, the driver looks for a
+10BASE-T link and uses the BNC (coax) port when there is none.
+
+Why: 3Com 3C589 cards come with the EEPROM set to "10BASE-T with
+autoselect". Version 1.5 reads the link-beat bit once, right after
+power-on, when it does not yet mean anything, and then falls back to
+10BASE-T. On a BNC network the card stays silent: no packets go out,
+none come in, and only the dongle's LED tells that something is wrong
+(it stays off). The Windows driver gets around this with its
+"Transceiver type" setting, which lives in the Windows registry, not
+on the card.
+
+What 1.5auto3 does when the card is opened (DECnet-Start, or when a
+TCP/IP stack goes online):
+
+  1. selects 10BASE-T with link-beat detection,
+  2. ignores the link-beat bit for 0.3 seconds (it is still set from
+     power-on for about 0.1 seconds),
+  3. takes 10BASE-T if the bit then stays set for 0.3 seconds; a
+     switch port may need about one second before it gives link
+     pulses,
+  4. otherwise, after 3 seconds, takes BNC.
+
+So opening the card takes up to 3 seconds longer on BNC. The choice is
+made only when the card is opened: after changing the cable, stop and
+start the network software (for DECnet: DECnet-Stop, DECnet-Start).
+A card whose EEPROM is set to a fixed port (autoselect off) keeps that
+port, as before. The driver never writes to the card's EEPROM.
+
+Tested on a real A1200 (OS 3.2.3) with DECnet: 3C589D (two cards,
+dongle with BNC and RJ45) and 3C589B (10BASE-T cable and two BNC
+dongles), each on BNC and on 10BASE-T.
+
+
+Installing
+----------
+Install 3c589.device 1.5 from Aminet first (it brings pccard.library
+and the installer). Then copy Devs/networks/3c589.device from this
+archive over DEVS:networks/3c589.device. Keep the file name: the
+driver only opens under the name 3c589.device (another name gives
+error -1).
+
+In the A1200's PCMCIA slot the card usually needs CardReset (Aminet
+util/boot/CardReset.lha) before it can be opened, even after power-on.
+
+
+Contents
+--------
+  Devs/networks/3c589.device   the driver, 1.5auto3 (14.11.26)
+  1.5auto3.patch               changes against the 1.5 source
+  Source/                      the complete source of this version
+  GPL                          the licence (GNU General Public Licence)
+
+The patch also has small changes that let the 1.5 source build with
+today's amiga-gcc (bebbo, gcc 6.5); Source/inc/ holds the pccard.library
+headers and short header shims for that. Build, in Source/:
+
+  CF="-m68000 -msmall-code -O2 -w -fno-toplevel-reorder -noixemul -Iinc"
+  for f in device unit request; do m68k-amigaos-gcc $CF -c $f.c; done
+  m68k-amigaos-gcc -m68000 -noixemul -nostartfiles -nostdlib -s \
+     device.o unit.o request.o -lamiga -lgcc -o 3c589.device
+
+3c589.device is copyright Neil Cafferkey and is distributed under the
+GNU General Public Licence (see the file GPL). This changed version is
+not an official release by him.
