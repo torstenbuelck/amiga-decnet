@@ -25,7 +25,13 @@ TCP/IP stack goes online):
      pulses,
   4. otherwise, after 3 seconds, takes BNC.
 
-So opening the card takes up to 3 seconds longer on BNC. The choice is
+So opening the card takes up to 3 seconds longer on BNC. The driver
+waits in a loop while multitasking is held (Forbid), so the whole
+system stands still for that time (the Workbench clock stops, the
+mouse pointer may too). This happens only when the card is opened by the
+first program (at boot, or DECnet-Start with no TCP/IP stack running),
+not when a second program opens it. On 10BASE-T the pause is shorter,
+about one second. No data is lost. The choice is
 made only when the card is opened: after changing the cable, stop and
 start the network software (for DECnet: DECnet-Stop, DECnet-Start).
 A card whose EEPROM is set to a fixed port (autoselect off) keeps that

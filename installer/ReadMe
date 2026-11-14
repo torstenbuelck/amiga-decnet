@@ -213,8 +213,10 @@ card's link-beat bit right after power-on, when it does not yet mean
 anything, and then stays on 10BASE-T; the card neither sends nor
 receives, and the BNC dongle's LED stays off. 3c589.device 1.5auto3
 (3c589auto.lha, with source and patch, GPL) waits for a real 10BASE-T
-link for up to 3 seconds and takes BNC when there is none. Copy it
-over DEVS:networks/3c589.device; keep that file name.
+link for up to 3 seconds and takes BNC when there is none; during that
+wait the system stands still (only when the card is first opened, e.g.
+at DECnet-Start). Copy it over DEVS:networks/3c589.device; keep that
+file name.
 
 cnet.device 1.9 (NE2000 PCMCIA cards) has a bug: it takes every
 Ethernet address that starts with a byte of 80 or more (hex) for
