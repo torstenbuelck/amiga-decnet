@@ -32,3 +32,4 @@ __pycache__/
 # screenshots from testers and emulator runs
 /screenshots/
 /drivers/3c589/3c589auto.lha
+/drivers/cnet/cnetfix.lha

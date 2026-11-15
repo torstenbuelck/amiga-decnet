@@ -1,0 +1,32 @@
+--- src/cnetdevice.asm.orig
++++ src/cnetdevice.asm
+@@ -476,7 +476,7 @@
+ REVISION = 9
+ 
+ VERSTR macro
+- dc.b   "1.9 (8.8.2007)"
++ dc.b   "1.9 (15.11.26)"
+  endm
+ 
+ 
+@@ -1393,7 +1393,9 @@
+ ;
+ devclosedown:
+  ; not online, cancel exclusive mode, cancel promiscuous mode
+- and.w   #~(DDF_ONLINE|DDF_MINE|DDF_PROM),dd_flags(a1)
++ ; also not configured: kill_nic resets the controller, and init_nic
++ ; starts it again with the card's own address
++ and.w   #~(DDF_ONLINE|DDF_MINE|DDF_PROM|DDF_CONFIGURED),dd_flags(a1)
+  bra     kill_nic                                   ; stop controller
+ 
+ 
+@@ -2297,7 +2299,8 @@
+  MYDISABLE
+ 
+  move.l  ios2_srcaddr(a1),d0
+- ble     .badaddr                       ; check for valid address
++ beq     .badaddr                       ; check for valid address (not BLE:
++                                        ; DECnet's AA-00-04-00-xx-xx is valid)
+ 
+  lea     dd_stationaddress(a0),a0
+  move.l  d0,(a0)

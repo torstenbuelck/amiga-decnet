@@ -1,0 +1,83 @@
+cnet.device 1.9 fixed - NE2000 PCMCIA cards that carry DECnet
+==============================================================
+
+This is cnet.device 1.9 by Bruce Abbott, Harry "Piru" Sintonen and
+Rolf Anders (Aminet driver/net/cnetdevice.lha, public domain) with two
+bugs fixed, one byte each. Without the fixes DECnet does not work on
+these cards; TCP/IP is not affected, because it keeps the card's own
+Ethernet address.
+
+1. S2_CONFIGINTERFACE checks the new Ethernet address with a signed
+   test ("ble"). Every address that starts with a byte of 80 (hex) or
+   more counts as invalid, DECnet's AA-00-04-00-xx-xx among them. The
+   driver then refuses the address and, after that, every read and
+   write. Fixed: only an all-zero address is refused ("beq").
+
+2. When the last program closes the driver, it stops and resets the
+   card but still remembers the address as set. The next program that
+   opens it gets the card started with the card's own address, and its
+   S2_CONFIGINTERFACE is refused as "already configured". The card then
+   sends with the new address but receives nothing sent to it. With
+   DECnet this happens after dncheck (the installer runs it before
+   DECnet-Start) and after DECnet-Stop and DECnet-Start: DN: stays
+   empty after a long wait. Fixed: closing also forgets the address,
+   so the next program can set it again.
+
+Tested on a real A1200 (Blizzard 1230-IV, OS 3.2.3) with a D-Link
+DE-660+, cnet.device (68020+ version): dncheck, DECnet-Start, DN: read
+and write, DECnet-Stop and Start, 7 MB read (about 156 KB/s) and
+written back unchanged on 10BASE-T; dncopy on BNC as well. The card
+picks the port by itself, even while DECnet runs. cnet.device.000
+(68000 version) passed dncheck on the same machine. cnet16.device froze
+the A1200 with this card as soon as it was opened, before any output;
+it was not tried further. The other versions carry the same two bytes
+but have not been tried on real hardware yet.
+
+
+Installing
+----------
+Pick the same version you would take from the Aminet archive and copy
+it over DEVS:Networks/cnet.device or DEVS:Networks/cnet16.device; keep
+the old file. Mind the name: each file opens only under its own device
+name, cnet.device for the left column, cnet16.device for the right one
+(cnet16.device copied to cnet.device gives error -1).
+
+  cnet.device            68020 and up       cnet16.device
+  cnet.device.000        68000/68010        cnet16.device.000
+  cnet.device.turboio    68020 and up,      cnet16.device.turboio
+                         faster I/O
+  cnet.device.debug      debug output       cnet16.device.debug
+                         (Sashimi)
+
+cnet16.device is for cards that need 16-bit register reads (mostly
+Fast Ethernet cards). For the D-Link DE-660+ take cnet.device:
+cnet16.device froze the machine with it. The fixed files say
+"1.9 (15.11.26)" in Version.
+
+The driver takes the PCMCIA slot when it is first opened and gives it
+back only when it leaves memory. To try another version without a
+reboot, stop all network software and run "Avail FLUSH" first, or the
+new one gets error -1.
+
+On an A1200 without the PCMCIA reset modification, CardReset (Aminet
+util/boot/CardReset.lha) may be needed before the card opens; see
+cnet.guide in the Aminet archive.
+
+
+Contents
+--------
+  Devs/Networks/    all eight versions, fixed
+  cnetpatch.py      makes them from the Aminet files (Python 3):
+                      cnetpatch.py IN OUT
+                    it finds both places by their code, so it fits
+                    every version, and refuses a file where it does not
+  cnetfix.patch     the same two changes in the source (src/cnetdevice.asm
+                    of the Aminet archive)
+
+The fixed files were made with cnetpatch.py from the Aminet binaries,
+not assembled again. The source and the rest of the original archive
+(guide, compatibility list, examples) are in driver/net/cnetdevice.lha
+on Aminet.
+
+cnet.device is public domain. This fixed version is not an official
+release by its authors.

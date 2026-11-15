@@ -197,8 +197,8 @@ dncheck tells whether a card's driver can carry DECnet. Tested so far
                                                         and BNC, 3.2.3)
   D-Link DE-660+ PCMCIA cnet.device 1.9 (Aminet)        does not work
                         cnet.device 1.9, fixed          works on a real
-                        (cnetfix.lha)                   A1200 (10BASE-T,
-                                                        OS 3.2.3)
+                        (cnetfix.lha)                   A1200 (10BASE-T
+                                                        and BNC, 3.2.3)
   Zorro-LAN-IDE         its own SANA-II driver          not tested yet
 
 Except for the real A3000 and A1200, these tests ran in the emulator
@@ -233,7 +233,8 @@ TCP/IP is not affected (it uses the card's own address):
     stays empty after a long wait.
 cnetfix.lha holds cnet.device 1.9 with both bugs fixed (one byte each,
 all variants, version date 15.11.26). Copy the variant you use over
-DEVS:Networks/cnet.device (or cnet16.device); keep the old file.
+DEVS:Networks/cnet.device (or cnet16.device), keep the old file, and
+see the ReadMe in cnetfix.lha. For the DE-660+ take cnet.device.
 
 
 Version history
