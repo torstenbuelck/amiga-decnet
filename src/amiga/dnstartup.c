@@ -14,7 +14,10 @@
  * dnetd has to configure the network card before any TCP/IP stack does,
  * because a SANA-II unit is configured only once per boot. So the block
  * goes in front of the first line that starts network software (AmiTCP,
- * startnet, Roadshow's AddNetInterface, Miami, Genesis), else at the end.
+ * startnet, Roadshow's AddNetInterface or S:Network-Startup, Miami,
+ * Genesis), or of an Installer block named after one (;BEGIN Roadshow),
+ * else at the end. Lines put out of action with ";" count as well: the
+ * block must stay in front when they are switched on again.
  * An old DECnet block is removed first. The previous file is kept as
  * FILE.bak. If a ;BEGIN DECnet line has no ;END DECnet line (or the
  * other way round), the file is left alone (return code 20).
@@ -39,13 +42,14 @@
 
 #include <string.h>
 
-static const char version[] = "$VER: dnstartup 0.2 (03.11.2026)";
+static const char version[] = "$VER: dnstartup 0.3 (15.11.2026)";
 
 #define BEGIN_LINE ";BEGIN DECnet"
 #define END_LINE   ";END DECnet"
 
 static const char *networds[] = {
-	"amitcp", "startnet", "addnetinterface", "roadshow", "miami", "genesis", NULL
+	"amitcp", "startnet", "addnetinterface", "network-startup", "roadshow", "miami",
+	"genesis", NULL
 };
 
 static int lower(int c)
@@ -129,17 +133,21 @@ static BOOL comment(const char *line, LONG len)
 	return i == len || line[i] == ';';
 }
 
-/* A line that starts network software. */
-static BOOL netline(const char *line, LONG len)
+/* A line that mentions network software, whether active or not. */
+static BOOL netword(const char *line, LONG len)
 {
 	int k;
 
-	if (comment(line, len))
-		return FALSE;
 	for (k = 0; networds[k]; k++)
 		if (contains(line, len, networds[k]))
 			return TRUE;
 	return FALSE;
+}
+
+/* A line that starts network software. */
+static BOOL netline(const char *line, LONG len)
+{
+	return !comment(line, len) && netword(line, len);
 }
 
 /* The whole file, NULL (and *len 0) if it does not exist. */
@@ -193,9 +201,10 @@ static BOOL put_block(BPTR fh, const char *dir)
 }
 
 /*
- * Where the DECnet block goes: the start of the first line that starts
- * network software, or of the Installer block (;BEGIN x ... ;END x) that
- * contains it, so other blocks stay whole. -1: at the end.
+ * Where the DECnet block goes: the start of the first line that mentions
+ * network software (also one put out of action with ";"), or of the
+ * Installer block (;BEGIN x ... ;END x) that contains it or is named
+ * after it, so other blocks stay whole. -1: at the end.
  */
 static LONG insert_pos(const char *buf, LONG len)
 {
@@ -206,11 +215,13 @@ static LONG insert_pos(const char *buf, LONG len)
 			;
 		if (isline(buf + start, i - start, BEGIN_LINE))
 			continue;               /* ours, removed anyway */
-		if (starts(buf + start, i - start, ";BEGIN "))
+		if (starts(buf + start, i - start, ";BEGIN ")) {
+			if (netword(buf + start, i - start))
+				return start;   /* e.g. ;BEGIN Roadshow */
 			block = start;
-		else if (starts(buf + start, i - start, ";END "))
+		} else if (starts(buf + start, i - start, ";END "))
 			block = -1;
-		else if (netline(buf + start, i - start))
+		else if (netword(buf + start, i - start))
 			return block >= 0 ? block : start;
 	}
 	return -1;
