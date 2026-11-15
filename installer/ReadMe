@@ -195,7 +195,10 @@ dncheck tells whether a card's driver can carry DECnet. Tested so far
   3Com 3C589B/D PCMCIA  3c589.device 1.5auto3           works on a real
                                                         A1200 (10BASE-T
                                                         and BNC, 3.2.3)
-  NE2000 PCMCIA         cnet.device 1.9 (Aminet)        not tested yet
+  D-Link DE-660+ PCMCIA cnet.device 1.9 (Aminet)        does not work
+                        cnet.device 1.9, fixed          works on a real
+                        (cnetfix.lha)                   A1200 (10BASE-T,
+                                                        OS 3.2.3)
   Zorro-LAN-IDE         its own SANA-II driver          not tested yet
 
 Except for the real A3000 and A1200, these tests ran in the emulator
@@ -218,12 +221,19 @@ wait the system stands still (only when the card is first opened, e.g.
 at DECnet-Start). Copy it over DEVS:networks/3c589.device; keep that
 file name.
 
-cnet.device 1.9 (NE2000 PCMCIA cards) has a bug: it takes every
-Ethernet address that starts with a byte of 80 or more (hex) for
-invalid, DECnet's AA-00-04-00-xx-xx among them. DECnet then does not
-work, not even in dnetd's fallback mode; dncheck says "the driver
-rejects it". TCP/IP is not affected (it uses the card's own address).
-A fixed cnet.device is being tested.
+cnet.device 1.9 (NE2000 PCMCIA cards) has two bugs that stop DECnet;
+TCP/IP is not affected (it uses the card's own address):
+  - it takes every Ethernet address that starts with a byte of 80 or
+    more (hex) for invalid, DECnet's AA-00-04-00-xx-xx among them.
+    DECnet then does not work, not even in dnetd's fallback mode;
+    dncheck says "the driver rejects it".
+  - once the last program has closed it (dncheck, or DECnet-Stop), it
+    starts the card again with the card's own address and refuses a
+    new one. DECnet then sends, but receives nothing sent to it: DN:
+    stays empty after a long wait.
+cnetfix.lha holds cnet.device 1.9 with both bugs fixed (one byte each,
+all variants, version date 15.11.26). Copy the variant you use over
+DEVS:Networks/cnet.device (or cnet16.device); keep the old file.
 
 
 Version history
