@@ -21,6 +21,8 @@ P="$B/pkg/3c589auto"
 mkdir -p "$P/Devs/networks"
 cp "$B/3c589.device" "$P/Devs/networks/"
 cp "$DIR/ReadMe" "$DIR/GPL" "$DIR/1.5auto3.patch" "$P/"
+# LiesMich is UTF-8 in the repository; the Amiga uses ISO-8859-1
+iconv -f UTF-8 -t ISO-8859-1 "$DIR/LiesMich" >"$P/LiesMich"
 cp -r "$B/src" "$P/Source"
 rm -f "$DIR/3c589auto.lha"
 (cd "$B/pkg" && "$LHA" -aq "$DIR/3c589auto.lha" 3c589auto)

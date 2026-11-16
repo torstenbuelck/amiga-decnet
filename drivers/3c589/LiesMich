@@ -1,0 +1,83 @@
+3c589.device 1.5auto3 - wählt 10BASE-T oder BNC selbst
+=======================================================
+
+Dies ist Neil Cafferkeys 3c589.device 1.5 (Aminet
+driver/net/3c589.lha, GPL) mit einer Änderung: Wenn die Karte geöffnet
+wird, sucht der Treiber eine 10BASE-T-Verbindung und benutzt den
+BNC-Anschluss (Koax), wenn keine da ist.
+
+Warum: 3Com-3C589-Karten kommen mit dem EEPROM auf "10BASE-T mit
+Autoselect". Version 1.5 liest das Link-Beat-Bit einmal, gleich nach
+dem Einschalten, wenn es noch nichts bedeutet, und fällt dann auf
+10BASE-T zurück. In einem BNC-Netz bleibt die Karte stumm: Es gehen
+keine Pakete hinaus, es kommen keine herein, und nur die LED am
+Adapter zeigt, dass etwas nicht stimmt (sie bleibt aus). Der
+Windows-Treiber umgeht das mit seiner Einstellung "Transceivertyp",
+die in der Windows-Registry steht, nicht auf der Karte.
+
+Was 1.5auto3 tut, wenn die Karte geöffnet wird (DECnet-Start, oder
+wenn ein TCP/IP-Stack online geht):
+
+  1. wählt 10BASE-T mit Link-Beat-Erkennung,
+  2. übergeht das Link-Beat-Bit 0,3 Sekunden lang (vom Einschalten her
+     ist es noch etwa 0,1 Sekunden gesetzt),
+  3. nimmt 10BASE-T, wenn das Bit danach 0,3 Sekunden lang gesetzt
+     bleibt; ein Switch-Port kann etwa eine Sekunde brauchen, bis er
+     Link-Pulse gibt,
+  4. nimmt sonst nach 3 Sekunden BNC.
+
+Das Öffnen der Karte dauert an BNC also bis zu 3 Sekunden länger. Der
+Treiber wartet in einer Schleife, während das Multitasking angehalten
+ist (Forbid); das ganze System steht in dieser Zeit still (die
+Workbench-Uhr bleibt stehen, der Mauszeiger vielleicht auch). Das
+passiert nur, wenn das erste Programm die Karte öffnet (beim
+Systemstart, oder DECnet-Start ohne laufenden TCP/IP-Stack), nicht
+wenn ein zweites Programm sie öffnet. An 10BASE-T ist die Pause
+kürzer, etwa eine Sekunde. Es gehen keine Daten verloren. Die Wahl
+fällt nur beim Öffnen der Karte: Nach einem Kabelwechsel halten Sie
+die Netzwerk-Software an und starten sie wieder (für DECnet:
+DECnet-Stop, DECnet-Start). Eine Karte, deren EEPROM auf einen festen
+Anschluss eingestellt ist (Autoselect aus), behält diesen Anschluss
+wie bisher. Der Treiber schreibt nie in das EEPROM der Karte.
+
+Getestet auf einem echten A1200 (OS 3.2.3) mit DECnet: 3C589D (zwei
+Karten, Adapter mit BNC und RJ45) und 3C589B (10BASE-T-Kabel und zwei
+BNC-Adapter), jeweils an BNC und an 10BASE-T.
+
+
+Installation
+------------
+Installieren Sie zuerst 3c589.device 1.5 aus dem Aminet (es bringt
+pccard.library und die Installation mit). Kopieren Sie dann
+Devs/networks/3c589.device aus diesem Archiv über
+DEVS:networks/3c589.device. Behalten Sie den Dateinamen: Der Treiber
+öffnet sich nur unter dem Namen 3c589.device (ein anderer Name ergibt
+Fehler -1).
+
+Im PCMCIA-Slot des A1200 braucht die Karte meist CardReset (Aminet
+util/boot/CardReset.lha), bevor sie sich öffnen lässt, auch nach dem
+Einschalten.
+
+
+Inhalt
+------
+  Devs/networks/3c589.device   der Treiber, 1.5auto3 (14.11.26)
+  1.5auto3.patch               Änderungen gegenüber dem Quelltext 1.5
+  Source/                      der vollständige Quelltext dieser Version
+  GPL                          die Lizenz (GNU General Public Licence)
+  ReadMe, LiesMich             diese Anleitung, englisch und deutsch
+
+Der Patch enthält auch kleine Änderungen, mit denen sich der Quelltext
+1.5 mit dem heutigen amiga-gcc (bebbo, gcc 6.5) übersetzen lässt;
+Source/inc/ enthält dafür die Header von pccard.library und kurze
+Ersatz-Header. Übersetzen, in Source/:
+
+  CF="-m68000 -msmall-code -O2 -w -fno-toplevel-reorder -noixemul -Iinc"
+  for f in device unit request; do m68k-amigaos-gcc $CF -c $f.c; done
+  m68k-amigaos-gcc -m68000 -noixemul -nostartfiles -nostdlib -s \
+     device.o unit.o request.o -lamiga -lgcc -o 3c589.device
+
+3c589.device ist urheberrechtlich geschützt (Copyright Neil Cafferkey)
+und wird unter der GNU General Public Licence verbreitet (siehe die
+Datei GPL). Diese geänderte Version ist keine offizielle Ausgabe von
+ihm.

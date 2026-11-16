@@ -1,0 +1,92 @@
+cnet.device 1.9 korrigiert - NE2000-PCMCIA-Karten mit DECnet
+============================================================
+
+Dies ist cnet.device 1.9 von Bruce Abbott, Harry "Piru" Sintonen und
+Rolf Anders (Aminet driver/net/cnetdevice.lha, Public Domain) mit zwei
+behobenen Fehlern, je ein Byte. Ohne die Korrekturen funktioniert
+DECnet mit diesen Karten nicht; TCP/IP ist nicht betroffen, weil es
+die eigene Ethernet-Adresse der Karte behält.
+
+1. S2_CONFIGINTERFACE prüft die neue Ethernet-Adresse mit einem Test
+   mit Vorzeichen ("ble"). Jede Adresse, die mit einem Byte ab 80
+   (hex) beginnt, gilt als ungültig, darunter DECnets
+   AA-00-04-00-xx-xx. Der Treiber lehnt die Adresse dann ab und danach
+   jedes Lesen und Schreiben. Korrigiert: Nur eine Adresse aus lauter
+   Nullen wird abgelehnt ("beq").
+
+2. Wenn das letzte Programm den Treiber schließt, hält er die Karte an
+   und setzt sie zurück, merkt sich die Adresse aber weiter als
+   gesetzt. Das nächste Programm, das ihn öffnet, bekommt die Karte mit
+   ihrer eigenen Adresse gestartet, und sein S2_CONFIGINTERFACE wird
+   als "schon eingerichtet" abgelehnt. Die Karte sendet dann mit der
+   neuen Adresse, empfängt aber nichts, was an sie gerichtet ist. Mit
+   DECnet passiert das nach dncheck (die Installation ruft es vor
+   DECnet-Start auf) und nach DECnet-Stop und DECnet-Start: DN: bleibt
+   nach langem Warten leer. Korrigiert: Beim Schließen vergisst der
+   Treiber auch die Adresse, sodass das nächste Programm sie wieder
+   setzen kann.
+
+Getestet auf einem echten A1200 (Blizzard 1230-IV, OS 3.2.3) mit einer
+D-Link DE-660+, cnet.device (Version für 68020+): dncheck,
+DECnet-Start, DN: lesen und schreiben, DECnet-Stop und Start, 7 MB
+gelesen (etwa 156 KB/s) und unverändert zurückgeschrieben an
+10BASE-T; dncopy auch an BNC. Die Karte wählt den Anschluss selbst,
+sogar während DECnet läuft. cnet.device.000 (Version für 68000) hat
+auf demselben Rechner dncheck bestanden. cnet16.device ließ den A1200
+mit dieser Karte gleich beim Öffnen einfrieren, noch vor jeder
+Ausgabe; es wurde nicht weiter versucht. Die übrigen Versionen haben
+dieselben zwei Bytes, wurden aber noch nicht auf echter Hardware
+ausprobiert.
+
+
+Installation
+------------
+Nehmen Sie dieselbe Version, die Sie aus dem Aminet-Archiv nehmen
+würden, und kopieren Sie sie über DEVS:Networks/cnet.device oder
+DEVS:Networks/cnet16.device; heben Sie die alte Datei auf. Achten Sie
+auf den Namen: Jede Datei öffnet sich nur unter ihrem eigenen
+Device-Namen, cnet.device für die linke Spalte, cnet16.device für die
+rechte (cnet16.device als cnet.device kopiert ergibt Fehler -1).
+
+  cnet.device            68020 und höher    cnet16.device
+  cnet.device.000        68000/68010        cnet16.device.000
+  cnet.device.turboio    68020 und höher,   cnet16.device.turboio
+                         schnellere E/A
+  cnet.device.debug      Debug-Ausgabe      cnet16.device.debug
+                         (Sashimi)
+
+cnet16.device ist für Karten, die 16-Bit-Registerzugriffe brauchen
+(meist Fast-Ethernet-Karten). Für die D-Link DE-660+ nehmen Sie
+cnet.device: cnet16.device ließ den Rechner mit ihr einfrieren. Die
+korrigierten Dateien zeigen in Version "1.9 (15.11.26)".
+
+Der Treiber belegt den PCMCIA-Slot, wenn er zum ersten Mal geöffnet
+wird, und gibt ihn erst frei, wenn er aus dem Speicher entfernt wird.
+Um ohne Neustart eine andere Version auszuprobieren, beenden Sie alle
+Netzwerk-Software und rufen zuerst "Avail FLUSH" auf, sonst bekommt
+die neue Fehler -1.
+
+Auf einem A1200 ohne die PCMCIA-Reset-Modifikation kann CardReset
+(Aminet util/boot/CardReset.lha) nötig sein, bevor sich die Karte
+öffnet; siehe cnet.guide im Aminet-Archiv.
+
+
+Inhalt
+------
+  Devs/Networks/    alle acht Versionen, korrigiert
+  cnetpatch.py      erzeugt sie aus den Aminet-Dateien (Python 3):
+                      cnetpatch.py EIN AUS
+                    es findet beide Stellen an ihrem Code, passt also
+                    auf jede Version, und lehnt eine Datei ab, bei der
+                    es nicht passt
+  cnetfix.patch     dieselben zwei Änderungen im Quelltext
+                    (src/cnetdevice.asm des Aminet-Archivs)
+  ReadMe, LiesMich  diese Anleitung, englisch und deutsch
+
+Die korrigierten Dateien wurden mit cnetpatch.py aus den
+Aminet-Programmdateien erzeugt, nicht neu assembliert. Der Quelltext
+und der Rest des Originalarchivs (Guide, Kompatibilitätsliste,
+Beispiele) liegen in driver/net/cnetdevice.lha im Aminet.
+
+cnet.device ist Public Domain. Diese korrigierte Version ist keine
+offizielle Ausgabe seiner Autoren.

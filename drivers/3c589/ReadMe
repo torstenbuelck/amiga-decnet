@@ -28,11 +28,11 @@ TCP/IP stack goes online):
 So opening the card takes up to 3 seconds longer on BNC. The driver
 waits in a loop while multitasking is held (Forbid), so the whole
 system stands still for that time (the Workbench clock stops, the
-mouse pointer may too). This happens only when the card is opened by the
-first program (at boot, or DECnet-Start with no TCP/IP stack running),
-not when a second program opens it. On 10BASE-T the pause is shorter,
-about one second. No data is lost. The choice is
-made only when the card is opened: after changing the cable, stop and
+mouse pointer may too). This happens only when the card is opened by
+the first program (at boot, or DECnet-Start with no TCP/IP stack
+running), not when a second program opens it. On 10BASE-T the pause is
+shorter, about one second. No data is lost. The choice is made only
+when the card is opened: after changing the cable, stop and
 start the network software (for DECnet: DECnet-Stop, DECnet-Start).
 A card whose EEPROM is set to a fixed port (autoselect off) keeps that
 port, as before. The driver never writes to the card's EEPROM.
@@ -60,6 +60,7 @@ Contents
   1.5auto3.patch               changes against the 1.5 source
   Source/                      the complete source of this version
   GPL                          the licence (GNU General Public Licence)
+  ReadMe, LiesMich             this text, in English and German
 
 The patch also has small changes that let the 1.5 source build with
 today's amiga-gcc (bebbo, gcc 6.5); Source/inc/ holds the pccard.library

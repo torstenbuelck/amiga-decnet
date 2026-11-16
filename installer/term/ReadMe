@@ -34,6 +34,9 @@ From the Shell: cd to this drawer, then
 
   Installer Install-DECnet-Term
 
+On a German AmigaOS 3.x the installer speaks German, else English.
+LiesMich is this text in German.
+
 To remove it, start Install-DECnet-Term again and choose "Remove";
 that also switches the maintenance login off.
 
@@ -78,8 +81,8 @@ to 60 seconds. A dial waits up to 30 seconds for the service.
 "Unknown LAT service" means that no node offers that name. Units 4 to
 7 are separate lines like units 0 to 3; sessions to the same node share
 one LAT circuit. VMS shows the line as "LAT Server/Port: MYAMI/LAT4"
-(your node name from ENV:DECnet/Name, here MYAMI, and the unit). A BREAK of the
-terminal program is sent to the host.
+(your node name from ENV:DECnet/Name, here MYAMI, and the unit). A
+BREAK of the terminal program is sent to the host.
 
 LAT, like CTERM, does not encrypt: everything you type, passwords
 included, can be read by anyone who watches the network.
@@ -232,9 +235,10 @@ dnmaint starts with DECnet (DECnet-Start runs
 DECnet:S/DECnet-Start-Term) and writes what happens to T:dnmaint.log:
 every connect with the node address (over LAT: node and port name),
 and whether it was accepted, and at the start an entry in the DECnet
-node list that is neither an address nor a known node name. "dnmaint STOP" ends it until the next
-boot. To change the nodes or the password, or to switch the login off
-for good, run Install-DECnet-Term again.
+node list that is neither an address nor a known node name.
+"dnmaint STOP" ends it until the next boot. To change the nodes or
+the password, or to switch the login off for good, run
+Install-DECnet-Term again.
 
 Programs that draw on the screen through the console (such as More)
 work; programs that open windows of their own show them on the
@@ -249,7 +253,8 @@ with a 68000. LAT on AmigaOS 3.5 (Amiberry and an A3000) with OpenVMS
 7.2. The maintenance login on AmigaOS 2.04 and 3.5 (Amiberry) and on an
 A3000 with AmigaOS 3.5, from OpenVMS 7.2 (SET HOST) and from Linux
 (dntool login); over LAT on AmigaOS 3.5 (Amiberry) from OpenVMS 7.2
-(SET HOST/LAT). Reports with other terminal programs and hosts are welcome.
+(SET HOST/LAT). Reports with other terminal programs and hosts are
+welcome.
 
 
 Version history

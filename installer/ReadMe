@@ -24,6 +24,9 @@ TCP/IP software. From the Shell: cd to this drawer, then
 
   Installer Install-DECnet MINUSER AVERAGE
 
+On a German AmigaOS 3.x the installer speaks German, else English
+(AmigaOS 2.04 knows no languages). LiesMich is this text in German.
+
 DECnet must start before TCP/IP: a SANA-II card is configured only once
 per boot, and DECnet needs the Ethernet address AA-00-04-00-xx-xx that
 follows from its DECnet address. TCP/IP then uses this address as well;
@@ -74,6 +77,7 @@ What goes where
   DECnet/S/DECnet-Stop     stops dnetd
   DECnet/Storage/Mountlist mount entry for DN:
   DECnet/Icons             icons DN: shows for itself and the nodes
+  DECnet/ReadMe, LiesMich  this text, in English and German
   LIBS:decnet.library      used by the programs above
   ENVARC:DECnet/nodes      your node list
 
@@ -161,8 +165,9 @@ disk icon, an icon for every node and, inside a node, an icon for every
 file and directory, chosen by the file's extension (text, picture or
 other file). These icons are made up by DN:; nothing is written to the
 node. Only Workbench sees them in a directory; Shell commands like
-"Copy DN:VAX1/#? RAM:", List or file managers do not get them. Icons the Workbench saves there (Information, Snapshot, dragging
-a file) are dropped. To give a file a real icon on the node, copy one
+"Copy DN:VAX1/#? RAM:", List or file managers do not get them. Icons
+the Workbench saves there (Information, Snapshot, dragging a file) are
+dropped. To give a file a real icon on the node, copy one
 in the Shell:
 
   Copy MyIcon.info DN:VAX1/PICTURE.IFF.info

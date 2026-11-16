@@ -73,6 +73,7 @@ Contents
                     every version, and refuses a file where it does not
   cnetfix.patch     the same two changes in the source (src/cnetdevice.asm
                     of the Aminet archive)
+  ReadMe, LiesMich  this text, in English and German
 
 The fixed files were made with cnetpatch.py from the Aminet binaries,
 not assembled again. The source and the rest of the original archive

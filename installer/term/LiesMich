@@ -1,0 +1,313 @@
+DECnet-Term für den Amiga
+=========================
+
+Mit dnterm.device meldet sich ein Amiga-Terminalprogramm über das Netz
+an VAX/VMS und anderen DECnet-Rechnern an, mit CTERM (dem Protokoll
+hinter VMS "SET HOST") oder LAT (dem Protokoll der DEC-Terminalserver).
+Das Terminalprogramm sieht ein Modem an einer seriellen Schnittstelle:
+Es wählt einen Knotennamen oder einen LAT-Dienst statt einer
+Telefonnummer.
+
+In der Gegenrichtung lässt der Wartungszugang (wahlweise) die
+DECnet-Knoten, die Sie nennen, an einer Amiga-Shell auf diesem Amiga
+anmelden (siehe "Wartungszugang" unten; er ist aus, solange Sie ihn
+nicht einschalten).
+
+
+Voraussetzungen
+---------------
+- DECnet für den Amiga, installiert und gestartet
+  (LIBS:decnet.library, dnetd)
+- ein Terminalprogramm, das ein anderes Device als serial.device
+  benutzen kann, z. B. Term oder NComm
+- auf dem Rechner: ein CTERM-Server (VMS hat einen eingebaut), oder für
+  LAT ein LAT-Dienst (VMS mit gestartetem LAT, Terminalserver)
+- für LAT: DECnet mit dnetd 0.7 oder neuer
+
+
+Installation
+------------
+Doppelklicken Sie "Install-DECnet-Term". Es kopiert dnterm.device nach
+DEVS:, die Befehle dntermpatch und latd nach DECnet:C und die Skripte
+DECnet-Start-Term und DECnet-Stop-Term nach DECnet:S und fragt, ob der
+Wartungszugang eingeschaltet werden soll. LAT braucht DECnet mit dnetd
+0.7 oder neuer: Aktualisieren Sie zuerst DECnet, wenn Ihres älter ist.
+Aus der Shell: in diese Schublade wechseln (cd), dann
+
+  Installer Install-DECnet-Term
+
+Auf einem deutschen AmigaOS 3.x spricht die Installation Deutsch, sonst
+Englisch.
+
+Zum Entfernen starten Sie Install-DECnet-Term noch einmal und wählen
+"DECnet-Term entfernen"; das schaltet auch den Wartungszugang aus.
+
+
+Benutzung
+---------
+Wählen Sie in den seriellen Einstellungen des Terminalprogramms statt
+serial.device das Device dnterm.device und Unit 0. Baudrate, Parität
+und Handshake spielen keine Rolle. Dann tippen Sie im Terminalfenster:
+
+  ATD VAX1        am Knoten VAX1 anmelden (ein Name aus Ihrer
+                  Knotenliste ENV:DECnet/nodes)
+  ATD 1.10        dasselbe mit der Adresse des Knotens
+
+"CONNECT" heißt, die Verbindung steht, und der Rechner fragt nach
+Benutzername und Passwort. Wenn Sie sich abmelden, antwortet das Device
+mit "NO CARRIER". Ein Telefonbucheintrag geht auch: Geben Sie den
+Knotennamen als Telefonnummer an; ATDT und ATDP davor stören nicht.
+
+Die Units 0 bis 3 sind getrennte Leitungen: Um zwei Sitzungen
+gleichzeitig offen zu halten, starten Sie ein zweites Terminalprogramm
+auf Unit 1.
+
+
+LAT
+---
+Die Units 4 bis 7 von dnterm.device erreichen LAT-Dienste statt
+DECnet-Knoten. Wählen Sie im Terminalprogramm Unit 4 und dann den
+Dienst:
+
+  ATD VAX1        am LAT-Dienst VAX1 anmelden
+
+VMS-Systeme mit LAT bieten einen Dienst mit dem Namen des Knotens an;
+Terminalserver und andere Systeme bieten ihre unter anderen Namen an.
+Um die Dienste in Ihrem Netz zu sehen, tippen Sie in einer Shell:
+
+  latd LIST
+
+latd läuft ab dem Start von DECnet (DECnet:S/DECnet-Start-Term) und
+hört die Dienstankündigungen mit. Gleich nach dem Start von DECnet
+sind manche Dienste noch nicht bekannt: Die Knoten kündigen sie nur
+alle 30 bis 60 Sekunden an. Ein Wählvorgang wartet bis zu 30 Sekunden
+auf den Dienst.
+
+"Unknown LAT service" heißt, dass kein Knoten diesen Namen anbietet.
+Die Units 4 bis 7 sind getrennte Leitungen wie die Units 0 bis 3;
+Sitzungen zum selben Knoten teilen sich einen LAT-Circuit. VMS zeigt
+die Leitung als "LAT Server/Port: MYAMI/LAT4" (Ihr Knotenname aus
+ENV:DECnet/Name, hier MYAMI, und die Unit). Ein BREAK des
+Terminalprogramms geht an den Rechner.
+
+LAT verschlüsselt, wie CTERM, nicht: Alles, was Sie tippen, Passwörter
+eingeschlossen, kann jeder lesen, der das Netz beobachtet.
+
+latd schreibt nach T:latd.log. "latd STOP" beendet es, bis DECnet
+wieder startet; DECnet-Stop hält es zuerst an, damit offene Sitzungen
+sauber enden.
+
+
+Term
+----
+Term 4.8 von Olaf Barthel liegt im Aminet als comm/term/Term.lha.
+Packen Sie das ganze Archiv in eine Schublade aus und starten Sie term
+von dort: Es hängt die Schubladen Fonts und Libs daneben selbst an
+FONTS: und LIBS: an.
+
+Term braucht seinen Zeichensatz GFX.font (in Fonts) für die
+VT100-Liniengrafik, z. B. die Rahmen von VMS MONITOR. Es lädt den
+Zeichensatz nur beim Start; ohne ihn erscheinen die Rahmen als
+Buchstaben (q, x, l, ...).
+
+Wählen Sie im Einstellungsmenü für die serielle Schnittstelle (im
+englischen Term: Settings > Serial) dnterm.device und Unit 0 und
+speichern Sie die Einstellungen. Die voreingestellte
+Emulation (ANSI/VT220) beantwortet die VMS-Terminalabfrage richtig.
+
+
+VAXterm
+-------
+VAXterm 2.4 von Tuomo Mickelsson (Aminet comm/term/VAXterm.lha, von den
+Fish-Disketten) ist ein VT220-Emulator für VMS. Es öffnet immer
+serial.device Unit 1; eine Einstellung für das Device hat es nicht.
+dntermpatch macht davon eine Kopie, die stattdessen dnterm.device
+öffnet:
+
+  dntermpatch VAXterm VAXterm.dnterm
+
+Lassen Sie die Kopie in der VAXterm-Schublade (sie braucht die
+Zeichensätze und Einstellungsdateien dort) und starten Sie
+VAXterm.dnterm. Es benutzt Unit 1 von dnterm.device; eine Sitzung in
+Term auf Unit 0 kann also offen bleiben. VAXterm hat eine eigene
+Tastaturbelegung (voreingestellt US); F3 öffnet seine Set-up-Seite,
+dort lässt sich die deutsche Belegung wählen.
+
+dntermpatch funktioniert mit jedem Programm, in dem "serial.device"
+fest eingebaut ist: Es schreibt eine Kopie und lässt das Original in
+Ruhe.
+
+
+Modembefehle
+------------
+  ATD Knoten  verbinden (jede Taste während des Wählens bricht ab)
+  +++         zurück in den Befehlsmodus, die Verbindung bleibt: vorher
+              und nachher eine Sekunde lang nichts tippen
+  ATO         nach +++ zurück in die Verbindung
+  ATH         auflegen (auch: das Device schließen)
+  ATZ         auflegen, Einstellungen zurück auf E1 Q0 V1
+  ATE0/ATE1   Befehlsecho aus/an
+  ATV0/ATV1   Ergebnisse als Zahlen/Wörter
+  ATQ0/ATQ1   Ergebnisse an/aus
+  ATI         Version
+
+Andere AT-Befehle werden angenommen und übergangen; Modem-Initstrings
+schaden also nicht. Ergebnisse: OK (0), CONNECT (1), NO CARRIER (3),
+ERROR (4), NO DIALTONE (6, DECnet läuft nicht), BUSY (7), NO ANSWER
+(8). Vor ERROR oder NO CARRIER steht ein kurzer Grund, z. B. "Unknown
+node" oder "Node has no CTERM server".
+
+Das Carrier-Signal folgt der Verbindung; Terminalprogramme zeigen
+deshalb die Verbindungszeit und merken, wenn der Rechner Sie abmeldet.
+
+
+Unter VMS
+---------
+CTERM meldet VMS den Terminaltyp VT200, aber VMS behandelt die Leitung
+erst als Bildschirmterminal, wenn das Terminal selbst geantwortet hat.
+Vollbildprogramme (EVE, MONITOR, ...) brauchen nach der Anmeldung
+zuerst diesen Befehl:
+
+  $ SET TERMINAL/INQUIRE
+
+Ohne ihn startet EVE nicht ("SYS$INPUT must be supported CRT"), und
+MONITOR zeichnet seine Rahmen aus + - | und schreibt jede
+Aktualisierung unter die letzte, sodass der Bildschirm immer weiter
+rollt. SHOW TERMINAL zeigt dann "No ANSI_CRT"; nach der Abfrage
+"ANSI_CRT".
+
+Am besten steht der Befehl in Ihrer LOGIN.COM. Das Terminalprogramm
+beantwortet die Abfrage; seine Emulation sollte deshalb VT100 oder
+VT220/ANSI sein.
+
+Die Zeileneditier-Tasten der VMS-Befehlszeile (Cursortasten, Delete,
+Ctrl-U, Ctrl-H, Ctrl-E) und Ctrl-Y funktionieren wie an einem
+VT-Terminal.
+
+
+Wartungszugang
+--------------
+WARNUNG: Der Wartungszugang gibt jedem eine vollständige Amiga-Shell,
+der einen erlaubten Knoten benutzt und das Passwort kennt. Von dort
+lässt sich alles tun, was Sie an der Tastatur dieses Amiga tun können:
+jede Datei lesen, ändern und löschen, jedes Programm starten. Schalten
+Sie ihn nur ein, wenn Sie ihn brauchen, und nur für Knoten, denen Sie
+vertrauen.
+
+- Nur die DECnet-Knoten, die Sie nennen, dürfen sich verbinden; die
+  Installation fragt danach (Adressen oder Namen aus Ihrer
+  Knotenliste, getrennt durch Leerzeichen oder Kommas, z. B.
+  1.10 VAX1). Eine Verbindung von jedem anderen Knoten wird
+  abgewiesen, bevor irgendetwas gefragt wird. Über LAT gilt das für
+  die Terminalserver, die Sie nennen (siehe unten). Lassen Sie die
+  DECnet-Knoten leer, um nur LAT zu erlauben; sind beide Listen leer,
+  kommt niemand hinein, deshalb bietet die Installation dann an, den
+  Zugang auszuschalten.
+- Nach dem Verbindungsaufbau kommt "Password:" (ohne Echo). Nach drei
+  falschen Antworten wird die Verbindung beendet, jeweils nach einer
+  Pause.
+- Das Passwort steht im Klartext in ENVARC:DECnet/maint-password (und
+  in ENV:DECnet/maint-password, solange der Amiga läuft). Jedes
+  Programm auf diesem Amiga kann es lesen.
+- DECnet und LAT verschlüsseln nicht: Das Passwort und die ganze
+  Sitzung gehen im Klartext durch das Netz, lesbar für jeden, der es
+  beobachten kann.
+- Nehmen Sie nie ein Passwort, das Sie auch anderswo benutzen.
+
+Auf einem erlaubten Knoten melden Sie sich an wie an jedem
+CTERM-Rechner:
+
+  $ SET HOST 1.10              (VMS; 1.10 ist dieser Amiga)
+  dntool login 1.10            (Linux, aus diesem Projekt)
+
+und tippen das Passwort. "endcli" beendet die Shell und die
+Verbindung. Ctrl-C und Ctrl-Y halten den laufenden Befehl an. Die
+Shell startet in SYS: mit dem Befehlspfad der Startskripte und führt
+zuerst S:Shell-Startup aus.
+
+Der Amiga bearbeitet die Zeile selbst, wie in einem Shell-Fenster:
+Cursor links/rechts, Backspace, Delete, Pos1/Ende (auch
+Ctrl-A/Ctrl-E), Ctrl-X löscht die Zeile, Ctrl-K den Rest davon. Cursor
+hoch/runter blättern durch die letzten 20 in dieser Sitzung getippten
+Zeilen. Das Terminal sollte ein VT100 oder kompatibel sein.
+
+Über LAT: Die Installation fragt auch nach LAT-Terminalservern (mit
+ihren LAT-Knotennamen, getrennt durch Leerzeichen oder Kommas, z. B.
+VAX1 TSERV2). Nennen Sie welche, wird der Zugang als LAT-Dienst mit dem
+Namen dieses Amiga (ENV:DECnet/Name) angeboten, solange latd läuft. Auf
+einem VMS-Knoten aus der Liste:
+
+  $ SET HOST/LAT MYAMI         (MYAMI ist der Name dieses Amiga)
+
+und an einem Terminalserver dessen Verbindungsbefehl für diesen Dienst.
+Terminalserver, die nicht in der Liste stehen, werden abgewiesen, bevor
+irgendetwas gefragt wird. Gefragt wird dasselbe Passwort, und die
+Sitzung funktioniert wie über CTERM.
+
+Einen Terminalserver, den viele benutzen (etwa ein Web-Terminal),
+können Sie auf einen seiner Ports einschränken: NAME/PORT, z. B.
+TSERV2/PORT_5, lässt nur diesen Port hinein. T:dnmaint.log zeigt Knoten
+und Port jeder Verbindung, auch der abgewiesenen; dort können Sie sie
+nachsehen.
+
+LAT hat keine Adressen: Jeder in Ihrem LAN kann einem Terminalserver
+einen beliebigen Namen geben. Die Liste hält also zufällige Besucher
+fern, nicht aber jemanden, der es darauf anlegt hineinzukommen; das
+leistet das Passwort. Alle Terminalserver im LAN sehen den Dienst.
+Lassen Sie die Liste leer, wenn Sie LAT nicht brauchen.
+
+dnmaint startet mit DECnet (DECnet-Start führt
+DECnet:S/DECnet-Start-Term aus) und schreibt, was geschieht, nach
+T:dnmaint.log: jede Verbindung mit der Knotenadresse (über LAT: Knoten-
+und Portname) und ob sie angenommen wurde, und beim Start jeden Eintrag
+in der DECnet-Knotenliste, der weder eine Adresse noch ein bekannter
+Knotenname ist. "dnmaint STOP" beendet es bis zum nächsten Systemstart.
+Um die Knoten oder das Passwort zu ändern oder den Zugang endgültig
+auszuschalten, starten Sie Install-DECnet-Term noch einmal.
+
+Programme, die über die Konsole auf den Bildschirm schreiben (wie
+More), funktionieren; Programme, die eigene Fenster öffnen, zeigen sie
+auf dem Bildschirm des Amiga, nicht am entfernten Terminal.
+
+
+Getestet
+--------
+Term 4.8 und VAXterm 2.4 unter AmigaOS 3.1 (Amiberry) mit OpenVMS-7.2-
+Rechnern: Anmeldung, DCL, EVE und MONITOR. dnterm.device auch unter
+AmigaOS 2.04 mit einem 68000. LAT unter AmigaOS 3.5 (Amiberry und ein
+A3000) mit OpenVMS 7.2. Der Wartungszugang unter AmigaOS 2.04 und 3.5
+(Amiberry) und auf einem A3000 mit AmigaOS 3.5, von OpenVMS 7.2 aus
+(SET HOST) und von Linux aus (dntool login); über LAT unter AmigaOS
+3.5 (Amiberry) von OpenVMS 7.2 aus (SET HOST/LAT). Berichte mit
+anderen Terminalprogrammen und Rechnern sind willkommen.
+
+
+Versionsgeschichte
+------------------
+0.6 (26.10.2026)
+  - erste Ausgabe für Tester: dnterm.device 0.3, dntermpatch 0.1,
+    latd 0.2, dnmaint 0.5; braucht DECnet 0.1 oder neuer
+  - der Wartungszugang nimmt eine Liste von DECnet-Knoten; leer lassen
+    für einen Zugang nur über LAT
+
+Entwicklungsversionen, nicht veröffentlicht:
+0.5 (25.10.2026)  Wartungszugang auch über LAT
+0.4 (25.10.2026)  LAT: Units 4 bis 7 von dnterm.device wählen
+                  LAT-Dienste über latd an
+0.3 (24.10.2026)  wahlweiser Wartungszugang (dnmaint): DECnet-Knoten
+                  melden sich an einer Amiga-Shell an
+0.2 (24.10.2026)  dntermpatch für Programme mit fest eingebautem
+                  serial.device (VAXterm); dnterm.device nimmt kurze
+                  Öffnungsanfragen an
+0.1 (24.10.2026)  dnterm.device: CTERM-Sitzungen für
+                  Amiga-Terminalprogramme
+
+
+Lizenz
+------
+GNU General Public License, Version 2 oder neuer. Die CTERM-Nachrichten
+folgen dnlogin aus dnprogs, die LAT-Nachrichten latd von Christine
+Caulfield.
+
+Copyright (C) 2026  Torsten Bülck (tuti)
+https://forum.classic-computing.de

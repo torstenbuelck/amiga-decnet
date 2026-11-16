@@ -24,8 +24,251 @@
 (set #version "0.6")
 (set @app-name "DECnet-Term")
 
+; ---------------------------------------------------------------- texts
+
+; All texts the user sees, English or German: as in Install-DECnet,
+; German when @language is "deutsch" (OS 3.x with a German locale; 2.04
+; always reports "english"). A text with a value in it is split into
+; parts; plain variables keep the script as flat as before.
+
+(procedure P_TEXT_EN
+	(set #t-needos "DECnet-Term needs AmigaOS 2.04 (V37) or newer.")
+
+	(set #t-nodes (cat "Which DECnet nodes may log in?\n\n"
+	                   "Addresses (area.node) or names from your node list of the "
+	                   "DECnet nodes allowed to use the maintenance login, "
+	                   "separated by blanks or commas. Connects from every other "
+	                   "node are refused. Leave it empty for LAT only."))
+	(set #t-nodes-help (cat "Only these nodes get the password prompt; dnmaint rejects all "
+	                        "others before anything is asked. Choose the machines you "
+	                        "maintain this Amiga from (VMS: SET HOST).\n\n"))
+	(set #t-nodes-bad (cat "\" is neither a DECnet address (area.node, "
+	                       "area 1-63, node 1-1023) nor a node name (1-6 letters "
+	                       "and digits)."))
+	(set #t-lat (cat "Which LAT terminal servers may log in?\n\n"
+	                 "LAT node names of the terminal servers (or VMS nodes, "
+	                 "SET HOST/LAT) allowed to use the maintenance login, "
+	                 "separated by blanks or commas; NAME/PORT allows only that "
+	                 "port of it. Leave it empty for no LAT."))
+	(set #t-lat-help (cat "The login is then offered as LAT service named like this "
+	                      "Amiga (ENV:DECnet/Name). Only the nodes you name here get the "
+	                      "password prompt. A terminal server used by many people "
+	                      "(a web terminal) can be narrowed to your port: NAME/PORT, "
+	                      "as the Amiga's log T:dnmaint.log shows it for a refused "
+	                      "connect.\n\n"
+	                      "LAT knows no addresses: a node name can be forged by anyone "
+	                      "on your LAN, and the password crosses it in clear text.\n\n"))
+	(set #t-lat-bad (cat "\" is not a list of LAT node names (letters, "
+	                     "digits, $ _ . -, NAME/PORT, separated by blanks or commas)."))
+	(set #t-none (cat "No DECnet node and no LAT node named!\n\n"
+	                  "Then nobody could use the maintenance login. Enter "
+	                  "the nodes again, or switch the maintenance login off?"))
+	(set #t-none-help (cat "The maintenance login needs at least one DECnet node "
+	                       "or one LAT node that may log in."))
+	(set #t-none-again "Enter again")
+	(set #t-none-off "Switch off")
+
+	(set #t-pw (cat "Password for the maintenance login.\n\n"
+	                "It is shown here as you type it and stored as plain text in "
+	                "ENVARC:DECnet/maint-password. Use one you use nowhere else."))
+	(set #t-pw-keep "\n\nLeave it empty to keep the current password.")
+	(set #t-pw-help (cat "The other node asks for it after the connect, without echo. "
+	                     "Three wrong answers end the connection.\n\n"))
+	(set #t-pw-need "The maintenance login needs a password.")
+	(set #t-cp-maint "Copying dnmaint to DECnet:C")
+	(set #t-mstart (cat "Start the maintenance login now?\n\n"
+	                    "Otherwise it starts with DECnet at the next boot."))
+	(set #t-mstart-help "Runs DECnet:S/DECnet-Start-Term (dnmaint, log in T:dnmaint.log).")
+	(set #t-start-yes "Start")
+	(set #t-later "Later")
+	(set #t-mt-on "\n\nThe maintenance login is enabled")
+	(set #t-mt-for " for ")
+	(set #t-mt-and " and")
+	(set #t-mt-lat " over LAT for ")
+	(set #t-mt-read ". Read \"Maintenance login\" in the ReadMe.")
+	(set #t-mt-off "\n\nThe maintenance login has been switched off.")
+
+	(set #t-maint (cat "Enable the maintenance login?\n\n"
+	                   "It lets the DECnet or LAT nodes you name log in to an Amiga "
+	                   "Shell on this Amiga (VMS: SET HOST), after a password. Whoever "
+	                   "has such a node and the password can do everything on this "
+	                   "Amiga.\n\n"
+	                   "Passwords travel unencrypted over the network. Read "
+	                   "\"Maintenance login\" in the ReadMe before you enable it."))
+	(set #t-maint-help (cat "dnmaint answers CTERM connects (object 42) from the nodes you "
+	                        "name, asks for the password and then starts a Shell. Everything "
+	                        "you could do at this Amiga's keyboard can be done from there.\n\n"
+	                        "Answer \"No\" to leave it off (or to switch it off again)."))
+	(set #t-maint-yes "Enable")
+	(set #t-no "No")
+	(set #t-maint-old (cat "Your DECnet installation is older than this add-on: its "
+	                       "DECnet-Start would not start the maintenance login.\n\n"
+	                       "Update DECnet first (Install-DECnet), then run this "
+	                       "installation again to enable it."))
+	(set #t-lat-old (cat "\n\nLAT (units 4 to 7) needs DECnet with dnetd 0.7 "
+	                     "or newer. Update DECnet (Install-DECnet), then "
+	                     "restart DECnet or the Amiga."))
+
+	(set #t-rm-none "DECnet-Term is not installed.")
+	(set #t-rm-ask (cat "Remove DECnet-Term?\n\n"
+	                    "This deletes DEVS:dnterm.device and latd, and switches the "
+	                    "maintenance login off. Close your terminal program first."))
+	(set #t-rm-help "Answer \"Remove\" to delete DECnet-Term from this Amiga.")
+	(set #t-rm-yes "Remove")
+	(set #t-cancel "Cancel")
+	(set #t-rm-done "DECnet-Term has been removed.")
+
+	(set #t-nodecnet (cat "DECnet is not installed (LIBS:decnet.library is missing).\n\n"
+	                      "DECnet-Term works through DECnet. Install the DECnet package "
+	                      "first, then start this installation again."))
+	(set #t-cp-dev "Copying dnterm.device to DEVS:")
+	(set #t-cp-c "Copying dntermpatch and latd to DECnet:C")
+	(set #t-cp-s "Copying DECnet-Start-Term and DECnet-Stop-Term to DECnet:S")
+	(set #t-noassign (cat "\n\nLAT and the maintenance login need the DECnet: "
+	                      "assign (DECnet started); they were not set up."))
+	(set #t-done-1 "DECnet-Term ")
+	(set #t-done-2 (cat " is installed (dnterm.device in DEVS:).\n\n"
+	                    "In your terminal program choose dnterm.device instead of "
+	                    "serial.device: unit 0 for CTERM, then type ATD and a node "
+	                    "(ATD 1.10); unit 4 for LAT, then type ATD and a LAT service. "
+	                    "Read the ReadMe for more."))
+
+	(set #t-welcome-1 "DECnet-Term ")
+	(set #t-welcome-2 (cat ": terminals over DECnet and LAT.\n\n"
+	                       "Copyright (C) 2026 Torsten Bülck (tuti)\n"
+	                       "https://forum.classic-computing.de\n"
+	                       "GNU GPL v2 or later, ABSOLUTELY NO WARRANTY."))
+	(set #t-what "What do you want to do?")
+	(set #t-what-install "Install or update DECnet-Term")
+	(set #t-what-remove "Remove DECnet-Term")
+)
+
+(procedure P_TEXT_DE
+	(set #t-needos "DECnet-Term braucht AmigaOS 2.04 (V37) oder neuer.")
+
+	(set #t-nodes (cat "Welche DECnet-Knoten dürfen sich anmelden?\n\n"
+	                   "Adressen (Bereich.Knoten) oder Namen aus Ihrer Knotenliste "
+	                   "der DECnet-Knoten, die den Wartungszugang benutzen dürfen, "
+	                   "getrennt durch Leerzeichen oder Kommas. Verbindungen von allen "
+	                   "anderen Knoten werden abgewiesen. Leer lassen für nur LAT."))
+	(set #t-nodes-help (cat "Nur diese Knoten bekommen die Passwortabfrage; dnmaint weist "
+	                        "alle anderen ab, bevor irgendetwas gefragt wird. Wählen Sie "
+	                        "die Rechner, von denen aus Sie diesen Amiga warten (VMS: "
+	                        "SET HOST).\n\n"))
+	(set #t-nodes-bad (cat "\" ist weder eine DECnet-Adresse (Bereich.Knoten, "
+	                       "Bereich 1-63, Knoten 1-1023) noch ein Knotenname (1-6 "
+	                       "Buchstaben und Ziffern)."))
+	(set #t-lat (cat "Welche LAT-Terminalserver dürfen sich anmelden?\n\n"
+	                 "LAT-Knotennamen der Terminalserver (oder VMS-Knoten, "
+	                 "SET HOST/LAT), die den Wartungszugang benutzen dürfen, "
+	                 "getrennt durch Leerzeichen oder Kommas; NAME/PORT erlaubt nur "
+	                 "diesen einen Port. Leer lassen für kein LAT."))
+	(set #t-lat-help (cat "Der Zugang wird dann als LAT-Dienst mit dem Namen dieses "
+	                      "Amiga angeboten (ENV:DECnet/Name). Nur die Knoten, die Sie "
+	                      "hier nennen, bekommen die Passwortabfrage. Einen Terminalserver, "
+	                      "den viele benutzen (ein Web-Terminal), können Sie auf Ihren "
+	                      "Port einschränken: NAME/PORT, so wie ihn das Protokoll "
+	                      "T:dnmaint.log des Amiga bei einer abgewiesenen Verbindung "
+	                      "zeigt.\n\n"
+	                      "LAT kennt keine Adressen: Einen Knotennamen kann jeder in "
+	                      "Ihrem LAN fälschen, und das Passwort läuft im Klartext "
+	                      "durch das LAN.\n\n"))
+	(set #t-lat-bad (cat "\" ist keine Liste von LAT-Knotennamen (Buchstaben, "
+	                     "Ziffern, $ _ . -, NAME/PORT, getrennt durch Leerzeichen oder "
+	                     "Kommas)."))
+	(set #t-none (cat "Kein DECnet-Knoten und kein LAT-Knoten genannt!\n\n"
+	                  "Dann könnte niemand den Wartungszugang benutzen. Knoten neu "
+	                  "eingeben oder den Wartungszugang ausschalten?"))
+	(set #t-none-help (cat "Der Wartungszugang braucht mindestens einen DECnet-Knoten "
+	                       "oder einen LAT-Knoten, der sich anmelden darf."))
+	(set #t-none-again "Neu eingeben")
+	(set #t-none-off "Ausschalten")
+
+	(set #t-pw (cat "Passwort für den Wartungszugang.\n\n"
+	                "Es wird hier beim Tippen angezeigt und im Klartext in "
+	                "ENVARC:DECnet/maint-password gespeichert. Nehmen Sie eines, das "
+	                "Sie sonst nirgends verwenden."))
+	(set #t-pw-keep "\n\nLeer lassen, um das bisherige Passwort zu behalten.")
+	(set #t-pw-help (cat "Der andere Knoten fragt es nach dem Verbindungsaufbau ab, ohne "
+	                     "Echo. Nach drei falschen Antworten wird die Verbindung "
+	                     "beendet.\n\n"))
+	(set #t-pw-need "Der Wartungszugang braucht ein Passwort.")
+	(set #t-cp-maint "Kopiere dnmaint nach DECnet:C")
+	(set #t-mstart (cat "Den Wartungszugang jetzt starten?\n\n"
+	                    "Sonst startet er beim nächsten Booten mit DECnet."))
+	(set #t-mstart-help "Startet dnmaint (Protokoll in T:dnmaint.log).")
+	(set #t-start-yes "Starten")
+	(set #t-later "Später")
+	(set #t-mt-on "\n\nDer Wartungszugang ist eingeschaltet")
+	(set #t-mt-for " für ")
+	(set #t-mt-and " und")
+	(set #t-mt-lat " über LAT für ")
+	(set #t-mt-read ". Lesen Sie \"Wartungszugang\" in LiesMich.")
+	(set #t-mt-off "\n\nDer Wartungszugang ist ausgeschaltet.")
+
+	(set #t-maint (cat "Den Wartungszugang einschalten?\n\n"
+	                   "Mit ihm können sich die DECnet- oder LAT-Knoten, die Sie "
+	                   "nennen, nach einem Passwort an einer Amiga-Shell auf diesem "
+	                   "Amiga anmelden (VMS: SET HOST). Wer einen solchen Knoten und "
+	                   "das Passwort hat, kann auf diesem Amiga alles tun.\n\n"
+	                   "Passwörter gehen unverschlüsselt durch das Netz. Lesen Sie "
+	                   "\"Wartungszugang\" in LiesMich, bevor Sie ihn einschalten."))
+	(set #t-maint-help (cat "dnmaint beantwortet CTERM-Verbindungen (Objekt 42) von den "
+	                        "Knoten, die Sie nennen, fragt das Passwort ab und startet "
+	                        "dann eine Shell. Alles, was Sie an der Tastatur dieses Amiga "
+	                        "tun könnten, geht dann auch von dort aus.\n\n"
+	                        "Antworten Sie \"Nein\", um ihn ausgeschaltet zu lassen (oder "
+	                        "wieder auszuschalten)."))
+	(set #t-maint-yes "Einschalten")
+	(set #t-no "Nein")
+	(set #t-maint-old (cat "Ihre DECnet-Installation ist älter als diese Erweiterung: "
+	                       "Ihr DECnet-Start würde den Wartungszugang nicht starten.\n\n"
+	                       "Aktualisieren Sie zuerst DECnet (Install-DECnet) und starten "
+	                       "Sie dann diese Installation noch einmal, um ihn "
+	                       "einzuschalten."))
+	(set #t-lat-old (cat "\n\nLAT (Units 4 bis 7) braucht DECnet mit dnetd 0.7 oder "
+	                     "neuer. Aktualisieren Sie DECnet (Install-DECnet) und starten "
+	                     "Sie dann DECnet oder den Amiga neu."))
+
+	(set #t-rm-none "DECnet-Term ist nicht installiert.")
+	(set #t-rm-ask (cat "DECnet-Term entfernen?\n\n"
+	                    "Das löscht DEVS:dnterm.device und latd und schaltet den "
+	                    "Wartungszugang aus. Beenden Sie vorher Ihr Terminalprogramm."))
+	(set #t-rm-help "Antworten Sie \"Entfernen\", um DECnet-Term von diesem Amiga zu löschen.")
+	(set #t-rm-yes "Entfernen")
+	(set #t-cancel "Abbrechen")
+	(set #t-rm-done "DECnet-Term ist entfernt.")
+
+	(set #t-nodecnet (cat "DECnet ist nicht installiert (LIBS:decnet.library fehlt).\n\n"
+	                      "DECnet-Term arbeitet über DECnet. Installieren Sie zuerst das "
+	                      "DECnet-Paket und starten Sie dann diese Installation noch "
+	                      "einmal."))
+	(set #t-cp-dev "Kopiere dnterm.device nach DEVS:")
+	(set #t-cp-c "Kopiere dntermpatch und latd nach DECnet:C")
+	(set #t-cp-s "Kopiere DECnet-Start-Term und DECnet-Stop-Term nach DECnet:S")
+	(set #t-noassign (cat "\n\nLAT und der Wartungszugang brauchen die Zuweisung "
+	                      "DECnet: (DECnet gestartet); sie wurden nicht eingerichtet."))
+	(set #t-done-1 "DECnet-Term ")
+	(set #t-done-2 (cat " ist installiert (dnterm.device in DEVS:).\n\n"
+	                    "Wählen Sie in Ihrem Terminalprogramm dnterm.device statt "
+	                    "serial.device: Unit 0 für CTERM, dann ATD und einen Knoten "
+	                    "tippen (ATD 1.10); Unit 4 für LAT, dann ATD und einen "
+	                    "LAT-Dienst tippen. Mehr steht in LiesMich."))
+
+	(set #t-welcome-1 "DECnet-Term ")
+	(set #t-welcome-2 (cat ": Terminals über DECnet und LAT.\n\n"
+	                       "Copyright (C) 2026 Torsten Bülck (tuti)\n"
+	                       "https://forum.classic-computing.de\n"
+	                       "GNU GPL v2 oder neuer, OHNE JEDE GEWÄHRLEISTUNG."))
+	(set #t-what "Was möchten Sie tun?")
+	(set #t-what-install "DECnet-Term installieren oder aktualisieren")
+	(set #t-what-remove "DECnet-Term entfernen")
+)
+
+(if (= @language "deutsch") (P_TEXT_DE) (P_TEXT_EN))
+
 (if (< (/ (getversion) 65536) 37)
-	(abort "DECnet-Term needs AmigaOS 2.04 (V37) or newer.")
+	(abort #t-needos)
 )
 
 ; ---------------------------------------------------------------- helpers
@@ -113,57 +356,33 @@
 		(set #nodes-ok 0)
 		(while (NOT #nodes-ok)
 			(set #nodes (askstring
-				(prompt "Which DECnet nodes may log in?\n\n"
-				        "Addresses (area.node) or names from your node list of the "
-				        "DECnet nodes allowed to use the maintenance login, "
-				        "separated by blanks or commas. Connects from every other "
-				        "node are refused. Leave it empty for LAT only.")
-				(help "Only these nodes get the password prompt; dnmaint rejects all "
-				      "others before anything is asked. Choose the machines you "
-				      "maintain this Amiga from (VMS: SET HOST).\n\n" @askstring-help)
+				(prompt #t-nodes)
+				(help #t-nodes-help @askstring-help)
 				(default #nodes)
 			))
 			(P_CHECKNODES)
 			(if (NOT #nodes-ok)
-				(message "\"" #bad "\" is neither a DECnet address (area.node, "
-				         "area 1-63, node 1-1023) nor a node name (1-6 letters "
-				         "and digits).")
+				(message "\"" #bad #t-nodes-bad)
 			)
 		)
 		(set #lat-ok 0)
 		(while (NOT #lat-ok)
 			(set #lat (askstring
-				(prompt "Which LAT terminal servers may log in?\n\n"
-				        "LAT node names of the terminal servers (or VMS nodes, "
-				        "SET HOST/LAT) allowed to use the maintenance login, "
-				        "separated by blanks or commas; NAME/PORT allows only that "
-				        "port of it. Leave it empty for no LAT.")
-				(help "The login is then offered as LAT service named like this "
-				      "Amiga (ENV:DECnet/Name). Only the nodes you name here get the "
-				      "password prompt. A terminal server used by many people "
-				      "(a web terminal) can be narrowed to your port: NAME/PORT, "
-				      "as the Amiga's log T:dnmaint.log shows it for a refused "
-				      "connect.\n\n"
-				      "LAT knows no addresses: a node name can be forged by anyone "
-				      "on your LAN, and the password crosses it in clear text.\n\n"
-				      @askstring-help)
+				(prompt #t-lat)
+				(help #t-lat-help @askstring-help)
 				(default #lat)
 			))
 			; letters, digits and $ _ . - in names, blanks or commas between
 			(if (OR (= #lat "") (patmatch "#[-A-Za-z0-9$_.,/ ]" #lat))
 				(set #lat-ok 1)
-				(message "\"" #lat "\" is not a list of LAT node names (letters, "
-				         "digits, $ _ . -, NAME/PORT, separated by blanks or commas).")
+				(message "\"" #lat #t-lat-bad)
 			)
 		)
 		(if (AND (= #nodes "") (= #lat ""))
 			(if (= 0 (askbool
-				(prompt "No DECnet node and no LAT node named!\n\n"
-				        "Then nobody could use the maintenance login. Enter "
-				        "the nodes again, or switch the maintenance login off?")
-				(help "The maintenance login needs at least one DECnet node "
-				      "or one LAT node that may log in.")
-				(choices "Enter again" "Switch off")
+				(prompt #t-none)
+				(help #t-none-help)
+				(choices #t-none-again #t-none-off)
 				(default 1)))
 				((set #maint-off 1) (set #lists-ok 1))
 			)
@@ -179,23 +398,19 @@
 	(set #pw-ok 0)
 	(while (NOT #pw-ok)
 		(set #pw (askstring
-			(prompt "Password for the maintenance login.\n\n"
-			        "It is shown here as you type it and stored as plain text in "
-			        "ENVARC:DECnet/maint-password. Use one you use nowhere else."
-			        (if #maint-was-on "\n\nLeave it empty to keep the current password." ""))
-			(help "The other node asks for it after the connect, without echo. "
-			      "Three wrong answers end the connection.\n\n" @askstring-help)
+			(prompt #t-pw (if #maint-was-on #t-pw-keep ""))
+			(help #t-pw-help @askstring-help)
 			(default "")
 		))
 		(if (OR (<> #pw "") #maint-was-on)
 			(set #pw-ok 1)
-			(message "The maintenance login needs a password.")
+			(message #t-pw-need)
 		)
 	)
 
 	; ---- files
 	(copyfiles
-		(prompt "Copying dnmaint to DECnet:C")
+		(prompt #t-cp-maint)
 		(help @copyfiles-help)
 		(source "C/dnmaint")
 		(dest "DECnet:C")
@@ -220,10 +435,9 @@
 	; ---- start now: only with dnetd running; an older dnmaint goes first
 	(if (= 0 (run "DECnet:C/dnetd >NIL: CHECK"))
 		(if (askbool
-			(prompt "Start the maintenance login now?\n\n"
-			        "Otherwise it starts with DECnet at the next boot.")
-			(help "Runs DECnet:S/DECnet-Start-Term (dnmaint, log in T:dnmaint.log).")
-			(choices "Start" "Later")
+			(prompt #t-mstart)
+			(help #t-mstart-help)
+			(choices #t-start-yes #t-later)
 			(default 1))
 			(
 				(run "DECnet:C/dnmaint >NIL: STOP")
@@ -231,44 +445,32 @@
 			)
 		)
 	)
-	(set #maint-text (cat "\n\nThe maintenance login is enabled"
-	                      (if (<> #nodes "") (cat " for " #nodes) "")
-	                      (if (AND (<> #nodes "") (<> #lat "")) " and" "")
-	                      (if (<> #lat "") (cat " over LAT for " #lat) "")
-	                      ". Read \"Maintenance login\" in the ReadMe."))
+	(set #maint-text (cat #t-mt-on
+	                      (if (<> #nodes "") (cat #t-mt-for #nodes) "")
+	                      (if (AND (<> #nodes "") (<> #lat "")) #t-mt-and "")
+	                      (if (<> #lat "") (cat #t-mt-lat #lat) "")
+	                      #t-mt-read))
 )
 
 (procedure P_MAINT
 	(set #maint-was-on (exists "ENVARC:DECnet/maint-password"))
 	(set #maint-text "")
 	(if (askbool
-		(prompt "Enable the maintenance login?\n\n"
-		        "It lets the DECnet or LAT nodes you name log in to an Amiga "
-		        "Shell on this Amiga (VMS: SET HOST), after a password. Whoever "
-		        "has such a node and the password can do everything on this "
-		        "Amiga.\n\n"
-		        "Passwords travel unencrypted over the network. Read "
-		        "\"Maintenance login\" in the ReadMe before you enable it.")
-		(help "dnmaint answers CTERM connects (object 42) from the nodes you "
-		      "name, asks for the password and then starts a Shell. Everything "
-		      "you could do at this Amiga's keyboard can be done from there.\n\n"
-		      "Answer \"No\" to leave it off (or to switch it off again).")
-		(choices "Enable" "No")
+		(prompt #t-maint)
+		(help #t-maint-help)
+		(choices #t-maint-yes #t-no)
 		(default #maint-was-on))
 		(
 			; DECnet-Start of older DECnet versions does not run the add-on
 			(if (< (getversion "DECnet:C/dnetd") 6)
-				(message "Your DECnet installation is older than this add-on: its "
-				         "DECnet-Start would not start the maintenance login.\n\n"
-				         "Update DECnet first (Install-DECnet), then run this "
-				         "installation again to enable it.")
+				(message #t-maint-old)
 				(
 					(P_MAINT_ASK)
 					(if #maint-off
 						(
 							(P_MAINT_OFF)
 							(if #maint-was-on
-								(set #maint-text "\n\nThe maintenance login has been switched off.")
+								(set #maint-text #t-mt-off)
 							)
 						)
 						(P_MAINT_ON)
@@ -279,7 +481,7 @@
 		(if #maint-was-on
 			(
 				(P_MAINT_OFF)
-				(set #maint-text "\n\nThe maintenance login has been switched off.")
+				(set #maint-text #t-mt-off)
 			)
 		)
 	)
@@ -290,9 +492,7 @@
 ; latd needs dnetd 0.7 (it passes the LAT frames); start the new latd now
 (procedure P_LAT
 	(if (< (getversion "DECnet:C/dnetd") 7)
-		(set #lat-text (cat "\n\nLAT (units 4 to 7) needs DECnet with dnetd 0.7 "
-		                    "or newer. Update DECnet (Install-DECnet), then "
-		                    "restart DECnet or the Amiga."))
+		(set #lat-text #t-lat-old)
 		(
 			(set #lat-text "")
 			(if (= 0 (run "DECnet:C/dnetd >NIL: CHECK"))
@@ -310,14 +510,12 @@
 (procedure P_REMOVE
 	(if (AND (NOT (exists "DEVS:dnterm.device"))
 	         (NOT (exists "ENVARC:DECnet/maint-password")))
-		(exit "DECnet-Term is not installed." (quiet))
+		(exit #t-rm-none (quiet))
 	)
 	(if (askbool
-		(prompt "Remove DECnet-Term?\n\n"
-		        "This deletes DEVS:dnterm.device and latd, and switches the "
-		        "maintenance login off. Close your terminal program first.")
-		(help "Answer \"Remove\" to delete DECnet-Term from this Amiga.")
-		(choices "Remove" "Cancel")
+		(prompt #t-rm-ask)
+		(help #t-rm-help)
+		(choices #t-rm-yes #t-cancel)
 		(default 0))
 		(
 			(delete "DEVS:dnterm.device" (optional "force") (prompt "") (help ""))
@@ -333,7 +531,7 @@
 					(P_MAINT_OFF)
 				)
 			)
-			(exit "DECnet-Term has been removed." (quiet))
+			(exit #t-rm-done (quiet))
 		)
 		(exit (quiet))
 	)
@@ -343,12 +541,10 @@
 
 (procedure P_INSTALL
 	(if (NOT (exists "LIBS:decnet.library"))
-		(abort "DECnet is not installed (LIBS:decnet.library is missing).\n\n"
-		       "DECnet-Term works through DECnet. Install the DECnet package "
-		       "first, then start this installation again.")
+		(abort #t-nodecnet)
 	)
 	(copylib
-		(prompt "Copying dnterm.device to DEVS:")
+		(prompt #t-cp-dev)
 		(help @copylib-help)
 		(source "Devs/dnterm.device")
 		(dest "DEVS:")
@@ -360,14 +556,14 @@
 	(if (<> (getassign "DECnet") "")
 		(
 			(copyfiles
-				(prompt "Copying dntermpatch and latd to DECnet:C")
+				(prompt #t-cp-c)
 				(help @copyfiles-help)
 				(source "C")
 				(dest "DECnet:C")
 				(choices "dntermpatch" "latd")
 			)
 			(copyfiles
-				(prompt "Copying DECnet-Start-Term and DECnet-Stop-Term to DECnet:S")
+				(prompt #t-cp-s)
 				(help @copyfiles-help)
 				(source "S")
 				(dest "DECnet:S")
@@ -376,29 +572,21 @@
 			(P_MAINT)
 			(P_LAT)
 		)
-		(set #maint-text "\n\nLAT and the maintenance login need the DECnet: "
-		                 "assign (DECnet started); they were not set up.")
+		(set #maint-text #t-noassign)
 	)
-	(exit "DECnet-Term " #version " is installed (dnterm.device in DEVS:).\n\n"
-	      "In your terminal program choose dnterm.device instead of "
-	      "serial.device: unit 0 for CTERM, then type ATD and a node "
-	      "(ATD 1.10); unit 4 for LAT, then type ATD and a LAT service. "
-	      "Read the ReadMe for more." #maint-text #lat-text (quiet))
+	(exit #t-done-1 #version #t-done-2 #maint-text #lat-text (quiet))
 )
 
 ; ---------------------------------------------------------------- main
 
 ; The icon has MINUSER=AVERAGE: at novice level the Installer would
 ; answer the maintenance login question by itself (with its default).
-(welcome "DECnet-Term " #version ": terminal sessions to and from DECnet nodes.\n\n"
-         "Copyright (C) 2026 Torsten Bülck (tuti)\n"
-         "https://forum.classic-computing.de\n"
-         "GNU GPL v2 or later, ABSOLUTELY NO WARRANTY.")
+(welcome #t-welcome-1 #version #t-welcome-2)
 
 (if (= 1 (askchoice
-	(prompt "What do you want to do?")
+	(prompt #t-what)
 	(help @askchoice-help)
-	(choices "Install or update DECnet-Term" "Remove DECnet-Term")
+	(choices #t-what-install #t-what-remove)
 	(default 0)))
 	(P_REMOVE)
 	(P_INSTALL)

@@ -1,0 +1,308 @@
+DECnet für den Amiga
+====================
+
+Ein DECnet-Phase-IV-Endknoten für AmigaOS 2.04 und neuer, ab 68000.
+Der Amiga wird zum Knoten in einem DECnet-Netz mit VAX/VMS, PDP-11 oder
+anderen DECnet-Systemen: Er holt und speichert dort Dateien (DAP/FAL),
+beantwortet NCP LOOP NODE und zeigt ihre Dateien als Laufwerk DN:.
+
+
+Voraussetzungen
+---------------
+- AmigaOS 2.04 (V37) oder neuer, jede 68k-CPU
+- eine Ethernet-Karte mit SANA-II-Treiber (z. B. A2065), derselbe
+  Treiber, den AmiTCP oder Roadshow benutzen
+- eine DECnet-Adresse (Bereich.Knoten), die in Ihrem Netz frei ist
+
+
+Installation
+------------
+Doppelklicken Sie "Install-DECnet". Es fragt nach DECnet-Adresse und
+-Name dieses Amiga und nach dem Netzwerktreiber, prüft die Karte mit
+dncheck, kopiert die Dateien und trägt DECnet in S:User-Startup ein,
+vor Ihrer TCP/IP-Software. Aus der Shell: in diese Schublade wechseln
+(cd), dann
+
+  Installer Install-DECnet MINUSER AVERAGE
+
+Auf einem deutschen AmigaOS 3.x spricht die Installation Deutsch, sonst
+Englisch (AmigaOS 2.04 kennt keine Sprachen).
+
+DECnet muss vor TCP/IP starten: Eine SANA-II-Karte wird nur einmal pro
+Systemstart eingerichtet, und DECnet braucht die Ethernet-Adresse
+AA-00-04-00-xx-xx, die aus seiner DECnet-Adresse folgt. TCP/IP benutzt
+dann ebenfalls diese Adresse; vergibt Ihr DHCP-Server eine feste
+IP-Adresse anhand der Ethernet-Adresse, ändern Sie diesen Eintrag.
+Starten Sie nach der Installation neu.
+
+Miami (und andere Software, die das Netz aus S:Startup-Sequence
+heraus startet) kommt für DECnet zu früh: Startup-Sequence ruft
+S:User-Startup erst kurz vor ihrem Ende auf. Die Installation warnt,
+wenn sie eine solche Zeile findet, ändert S:Startup-Sequence aber nie.
+Machen Sie es selbst: zuerst eine Kopie anlegen, eine Bootdiskette
+bereithalten, dann die Zeile, die das Netz startet (z. B. "Execute
+S/MIAMITCP-Startup"), hinter diese Zeilen verschieben:
+
+  IF EXISTS S:User-Startup
+    Execute S:User-Startup
+  EndIF
+
+So kommt DECnet, das in S:User-Startup startet, zuerst.
+
+Zwei Programme zeigen ihre Ausgabe in einem eigenen Fenster:
+
+  DECnet-Check  die Prüfung der Karte durch dncheck. Die Installation
+                geht weiter, wenn Sie dieses Fenster schließen.
+  DECnet-Nodes  nur wenn die Installation Knotennamen übernehmen soll:
+                die Namen, die dnnodes gefunden hat. Die Installation
+                wartet nicht darauf; schließen Sie es, wenn Sie es
+                gelesen haben.
+
+AmigaOS 2.04 hat keinen Installer und kein LhA. Holen Sie beide zuerst
+aus dem Aminet: util/misc/Installer-43_3.lha (Installer nach C:
+kopieren) und util/arc/lha.run (starten, lha_68k als C:LhA kopieren).
+Unter 2.04 öffnen die Text-Piktogramme More; für Bilder brauchen Sie
+einen eigenen Betrachter (MultiView gibt es ab OS 3.0).
+
+Zum Entfernen starten Sie Install-DECnet noch einmal und wählen
+"DECnet entfernen". Es löscht nur die unten genannten Dateien (und
+DECnet-Term, falls installiert); Ihre eigenen Dateien in der
+DECnet-Schublade und ENVARC:DECnet/nodes bleiben erhalten.
+
+
+Was wohin kommt
+---------------
+  DECnet/C/dnetd           der DECnet-Stack (startet mit DECnet-Start)
+  DECnet/C/dncopy          eine Datei von einem Knoten kopieren
+  DECnet/C/dndir           ein Verzeichnis auf einem Knoten auflisten
+  DECnet/C/dnnodes         Knotennamen von einem anderen Knoten
+                           übernehmen (NML)
+  DECnet/C/dncheck         eine Netzwerkkarte auf DECnet prüfen
+  DECnet/C/dnstartup       trägt DECnet in S:User-Startup ein/aus
+  DECnet/L/dn-handler      das Dateisystem DN:
+  DECnet/S/DECnet-Start    richtet DECnet: und DN: ein, startet dnetd
+  DECnet/S/DECnet-Stop     hält dnetd an
+  DECnet/Storage/Mountlist Mount-Eintrag für DN:
+  DECnet/Icons             Piktogramme, die DN: für sich und die
+                           Knoten zeigt
+  DECnet/ReadMe, LiesMich  diese Anleitung, englisch und deutsch
+  LIBS:decnet.library      von den Programmen oben benutzt
+  ENVARC:DECnet/nodes      Ihre Knotenliste
+
+
+Die Knotenliste
+---------------
+DECnet hat keinen Namensdienst; deshalb führt jeder Knoten eine Liste
+mit Namen und Adressen. Ihre ist ENVARC:DECnet/nodes, ein Knoten pro
+Zeile:
+
+  NAME  ADRESSE  [Schlüsselwort ...]
+
+  USER name      Benutzername für Dateien auf diesem Knoten
+                 (weglassen: keiner)
+  PASSWORD wort  Passwort für diesen Benutzer (weglassen: keins)
+  NOBLOCK        beim Öffnen von Dateien kein DAP-Blocking anbieten
+                 (FOTOFX braucht das); Verzeichnislisten benutzen
+                 immer Blocking
+  PURGE          DN: löscht nach dem Schreiben ältere VMS-Versionen
+                 der Datei; ohne PURGE bleiben sie erhalten
+  SHOW           der Knoten erscheint als Schublade in DN:; hat kein
+                 Knoten SHOW, erscheinen alle. Die übrigen bleiben
+                 über ihren Namen erreichbar (DN:KNOTEN).
+
+Zum Beispiel:
+
+  VAX1    1.10   USER guest PASSWORD secret PURGE SHOW
+
+DN:, dndir, dncopy und dnnodes nehmen USER und PASSWORD von hier, DN:
+und dncopy auch NOBLOCK. USER und PASSWORD in der Befehlszeile haben
+Vorrang; NOBLOCK gilt, wenn es an einer der beiden Stellen steht.
+
+Wo bearbeiten: Wie alle AmigaOS-Einstellungen lesen DN: und die
+Programme nur ENV:DECnet/nodes, die Kopie im RAM, die DECnet-Start beim
+Systemstart aus ENVARC:DECnet/nodes anlegt.
+
+  - Bearbeiten Sie ENVARC:DECnet/nodes, damit eine Änderung bleibt,
+    und kopieren Sie die Datei dann hinüber, damit sie sofort gilt
+    (oder starten Sie neu):
+
+      Copy ENVARC:DECnet/nodes ENV:DECnet/nodes
+
+  - Bearbeiten Sie ENV:DECnet/nodes nur zum Ausprobieren: Das gilt
+    sofort und ist nach dem nächsten Neustart weg.
+
+dnnodes ... UPDATE schreibt neue Knoten in beide Dateien.
+
+Um die Namen zu übernehmen, die ein anderer Knoten kennt (wie NCP COPY
+KNOWN NODES):
+
+  dnnodes FROM=Bereich.Knoten REACHABLE UPDATE
+
+REACHABLE lässt die Knoten weg, die jener Knoten gerade nicht erreicht.
+Neue Namen kommen ans Ende; vorhandene Zeilen werden nie geändert.
+
+
+Benutzung
+---------
+  List DN:VAX1                      das Login-Verzeichnis auf VAX1
+  Copy DN:VAX1/LOGIN.COM RAM:       eine Datei von VAX1 kopieren
+  Copy RAM:test.txt DN:VAX1/        eine Datei auf VAX1 kopieren
+  dndir VAX1 [GUEST]*.*             Verzeichnisliste in VMS-Schreibweise
+  dncopy VAX1 TEST.TXT RAM:test.txt
+                                    die neueste Version von TEST.TXT
+  dncopy VAX1 [GUEST]TEST.TXT RAM:  in eine Schublade: behält den Namen
+  dncopy VAX1 BIG.DAT RAM:big.dat PROGRESS=WINDOW
+                                    mit Fortschrittsfenster (TEXT: eine
+                                    Fortschrittszeile in der Shell)
+
+Ohne Versionsnummer meint VMS immer die neueste Version einer Datei:
+dncopy, dndir und DN: arbeiten alle so, Sie brauchen also kaum je eine.
+DN: kann ältere Versionen nicht erreichen; eine dort angegebene
+Versionsnummer wird übergangen.
+
+Nur um mit dncopy oder dndir eine ältere Version zu erreichen, geben
+Sie ihre Nummer an und setzen den Namen in Anführungszeichen:
+
+  dncopy VAX1 "TEST.TXT;2" RAM:test.txt
+                                    Version 2 von TEST.TXT
+  dndir VAX1 "**.LHA;**"            alle Versionen aller .LHA-Dateien
+
+Die Anführungszeichen sind nötig, weil die Shell ";" als Beginn eines
+Kommentars liest und den Rest der Zeile weglässt: dncopy meldet dann
+"required argument missing", und dndir listet nur die neueste Version.
+In Anführungszeichen nimmt die Shell "*" als Fluchtzeichen; schreiben
+Sie dort deshalb jedes "*" doppelt. Ohne Anführungszeichen genügt ein
+einzelnes "*" (dndir VAX1 *.LHA).
+
+Unterverzeichnisse sind Schubladen: DN:VAX1/A/B ist [.A.B]. DN: zeigt
+ein eigenes Laufwerks-Piktogramm, für jeden Knoten ein Piktogramm und
+in einem Knoten eines für jede Datei und jedes Verzeichnis, gewählt
+nach der Endung der Datei (Text, Bild oder andere Datei). Diese
+Piktogramme erzeugt DN: selbst; auf den Knoten wird nichts
+geschrieben. Nur die Workbench sieht sie in einem Verzeichnis;
+Shell-Befehle wie "Copy DN:VAX1/#? RAM:", List oder Dateimanager
+bekommen sie nicht. Piktogramme, die die Workbench dort speichert
+(Informationen, Position speichern, eine Datei verschieben), werden
+verworfen. Um einer Datei auf dem Knoten ein echtes Piktogramm zu
+geben, kopieren Sie eines in der Shell:
+
+  Copy MeinPiktogramm.info DN:VAX1/PICTURE.IFF.info
+
+Die Piktogramme, die DN: benutzt, liegen in DECnet/Icons; Sie können
+sie austauschen.
+
+dnetd schreibt seine Meldungen nach T:dnetd.log. Startet es nicht
+(zum Beispiel wegen eines falschen Treibers oder einer falschen Unit),
+sagt DECnet-Start das und zeigt das Protokoll. DECnet-Start gibt 0
+zurück, wenn dnetd läuft, und 5 (WARN), wenn nicht; ein Skript, das es
+aufruft, kann also "If WARN" prüfen. Der Systemstart geht in beiden
+Fällen weiter. "dnetd CHECK" sagt dasselbe jederzeit (Rückgabewert 0,
+sonst 5); DECnet-Stop oder "dnetd STOP" beendet es.
+
+
+Netzwerkkarten
+--------------
+dncheck sagt, ob der Treiber einer Karte DECnet übertragen kann. Bisher
+getestet (dncheck, DN: und dncopy, 7 MB gelesen und unverändert
+zurückgeschrieben):
+
+  Karte                 Treiber                         Ergebnis
+  A2065                 a2065.device 2.16a (Aminet)     geht, auch auf
+                                                        echtem A3000
+  Hydra AmigaNet        hydra.device 1.44 (Aminet)      geht
+  X-Surf                x-surf.device 1.16 (iComp)      geht
+  X-Surf 100            x-surf-100.device 1.16 (iComp)  geht
+  Ariadne II            ariadne_ii.device 43.12         geht
+  3Com 3C589B PCMCIA    3c589.device 1.5 (Aminet)       geht auf echten
+                                                        A1200 (10BASE-T,
+                                                        OS 3.2.3, 3.9)
+  3Com 3C589B/D PCMCIA  3c589.device 1.5auto3           geht auf einem
+                                                        echten A1200
+                                                        (10BASE-T und
+                                                        BNC, 3.2.3)
+  D-Link DE-660+ PCMCIA cnet.device 1.9 (Aminet)        geht nicht
+                        cnet.device 1.9, korrigiert     geht auf einem
+                        (cnetfix.lha)                   echten A1200
+                                                        (10BASE-T und
+                                                        BNC, 3.2.3)
+  Zorro-LAN-IDE         eigener SANA-II-Treiber         noch nicht
+                                                        getestet
+
+Außer auf dem echten A3000 und A1200 liefen diese Tests im Emulator
+Amiberry (TAP-Netzwerk). Der Treibercode ist derselbe wie auf echter
+Hardware, aber die Karte ist emuliert; Berichte von echten Karten sind
+willkommen. Die 3C589B wurde mit dncheck und DN: geprüft; ein Tester
+hat außerdem mit dnnodes die Knotenliste geholt und sich mit VAXterm
+an einer VAX angemeldet (nach dntermpatch, Paket DECnet-Term). Auf dem
+A1200 öffnet sie sich nur nach CardReset (Aminet
+util/boot/CardReset.lha), auch nach dem Einschalten: Schreiben Sie
+"CardReset" in S:User-Startup vor DECnet-Start.
+
+In BNC-Netzen (Koax) geht 3c589.device 1.5 nicht: Es liest das
+Link-Beat-Bit der Karte gleich nach dem Einschalten, wenn es noch
+nichts bedeutet, und bleibt dann bei 10BASE-T; die Karte sendet und
+empfängt nichts, und die LED am BNC-Adapter bleibt aus.
+3c589.device 1.5auto3 (3c589auto.lha, mit Quelltext und Patch, GPL)
+wartet bis zu 3 Sekunden auf eine echte 10BASE-T-Verbindung und nimmt
+BNC, wenn keine kommt; während dieser Wartezeit steht das System still
+(nur beim ersten Öffnen der Karte, z. B. bei DECnet-Start). Kopieren
+Sie es über DEVS:networks/3c589.device; behalten Sie diesen
+Dateinamen.
+
+cnet.device 1.9 (NE2000-PCMCIA-Karten) hat zwei Fehler, die DECnet
+verhindern; TCP/IP ist nicht betroffen (es benutzt die eigene Adresse
+der Karte):
+  - Es hält jede Ethernet-Adresse für ungültig, die mit einem Byte ab
+    80 (hex) beginnt, darunter DECnets AA-00-04-00-xx-xx. DECnet geht
+    dann nicht, auch nicht im Ersatzbetrieb von dnetd; dncheck meldet
+    "the driver rejects it".
+  - Sobald das letzte Programm es geschlossen hat (dncheck oder
+    DECnet-Stop), startet es die Karte wieder mit ihrer eigenen
+    Adresse und lehnt eine neue ab. DECnet sendet dann, empfängt aber
+    nichts, was an es gerichtet ist: DN: bleibt nach langem Warten
+    leer.
+cnetfix.lha enthält cnet.device 1.9 mit beiden Fehlern behoben (je ein
+Byte, alle Varianten, Versionsdatum 15.11.26). Kopieren Sie die
+Variante, die Sie benutzen, über DEVS:Networks/cnet.device (oder
+cnet16.device), heben Sie die alte Datei auf und lesen Sie die
+Anleitung in cnetfix.lha. Für die DE-660+ nehmen Sie cnet.device.
+
+
+Versionsgeschichte
+------------------
+0.2 (04.11.2026)
+  - ReadMe: wie man Miami oder andere Netzwerk-Software, die aus
+    S:Startup-Sequence startet, hinter den Aufruf von User-Startup
+    verschiebt
+  - ReadMe: die 3Com 3C589B geht auf echten A1200 (OS 3.2.3 und 3.9,
+    mit CardReset); Zorro-LAN-IDE als noch nicht getestet aufgeführt
+  - DECnet-Start: Kann dnetd nicht starten (z. B. weil die PCMCIA-Karte
+    fehlt) oder DN: nicht eingebunden werden, geht der Systemstart
+    weiter (er hielt vorher vor LoadWB an); es gibt 5 (WARN) zurück,
+    wenn dnetd nicht läuft
+  - Installation: Kann "Starten" dnetd nicht starten, sagt sie das und
+    verweist auf T:dnetd.log (sie machte weiter und bot an,
+    Knotennamen zu übernehmen)
+  - Entfernen löscht nur DECnets eigene Dateien (es löschte die ganze
+    DECnet-Schublade mitsamt den Dateien des Benutzers) und
+    DECnet-Term mit DEVS:dnterm.device
+  - dnstartup 0.2: lässt S:User-Startup in Ruhe, wenn dem DECnet-Block
+    die Zeile ";END DECnet" fehlt (es entfernte alles danach), und
+    nimmt keine anderen Blöcke mehr mit, deren Name mit "DECnet"
+    beginnt
+
+0.1 (26.10.2026)
+  - erste Ausgabe für Tester: dnetd 0.8, decnet.library 1.2,
+    dn-handler 0.9 (DN:), dncopy 0.3, dndir 0.3, dnnodes 0.4,
+    dncheck 0.5, dnstartup 0.1
+  - getestet unter AmigaOS 2.04, 3.1 und 3.2.3 in Amiberry und auf
+    einem echten A3000
+
+
+Lizenz
+------
+GNU General Public License, Version 2 oder neuer. Teile beruhen auf
+dem DECnet-Code von Linux und auf dnprogs.
+
+Copyright (C) 2026  Torsten Bülck (tuti)
+https://forum.classic-computing.de
