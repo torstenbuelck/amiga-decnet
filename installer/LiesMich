@@ -282,7 +282,8 @@ Versionsgeschichte
   - Installation: setzt das Script-Bit von DECnet-Start und
     DECnet-Stop, sodass sie über ihren Namen laufen, ohne Execute
   - Installation: "Scheinbar installieren" bricht an der Knotenliste
-    nicht mehr mit einem Fehler ab
+    nicht mehr mit einem Fehler ab und meldet nicht mehr, DECnet sei
+    nicht gestartet
   - dnstartup 0.3: findet den Block von Roadshow 1.15 (";BEGIN
     Roadshow", Execute S:Network-Startup) und setzt DECnet davor (0.2
     setzte es dahinter); mit ";" abgeschaltete Zeilen zählen mit

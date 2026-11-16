@@ -255,7 +255,7 @@ Version history
   - Installer: sets the script bit of DECnet-Start and DECnet-Stop, so
     they run by name, without Execute
   - Installer: "Pretend to install" no longer stops with an error at
-    the node list
+    the node list, and no longer reports that DECnet did not start
   - dnstartup 0.3: finds Roadshow 1.15's block (";BEGIN Roadshow",
     Execute S:Network-Startup) and puts DECnet in front of it (0.2
     put it after); lines switched off with ";" count as well

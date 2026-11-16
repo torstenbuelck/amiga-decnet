@@ -757,8 +757,10 @@
 			; asking another node for names makes no sense (kept flat: deep
 			; nesting overflows the Installer's stack)
 			(set #from "")
+			; when pretending, execute is skipped and returns non-zero:
+			; no failure message then
 			(set #rc (execute "DECnet:S/DECnet-Start"))
-			(if (<> #rc 0)
+			(if (AND (<> #rc 0) (NOT @pretend))
 				(message #t-start-fail))
 			(if (= #rc 0) (set #from (askstring
 				(prompt #t-from)
