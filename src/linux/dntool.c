@@ -23,7 +23,7 @@
  *   put writes LOCALFILE as binary records (default SPEC: its base name)
  *   nodes lists the node database of NODE through NML (object 19)
  *
- * The tool is a DECnet node itself (default 23.203), so dnhost must not
+ * The tool is a DECnet node itself (default 23.269), so dnhost must not
  * run with the same address at the same time.
  *
  * Copyright (C) 2026  Torsten Bülck (tuti)
@@ -674,7 +674,7 @@ static void usage(const char *prog)
 int main(int argc, char **argv)
 {
 	const char *ifname = NULL, *user = NULL, *pass = NULL, *termtype = NULL, *cmd, *spec;
-	dn_u16 addr = (23 << 10) | 203, node;
+	dn_u16 addr = (23 << 10) | 269, node;
 	int c, verbose = 0, blocking = 1, reason, rc = 1;
 	struct dn_connreq req;
 	struct dns *s;

@@ -586,3 +586,6 @@ Referenz; DEC-Specs (Routing 2.0, NSP 4.0, DAP 5.6) als Grundlage.
 3. **Testadresse** für den Kern unter Linux auf dem Pi: **23.203**
    (MAC `AA-00-04-00-CB-5C`), bei RetroStar als temporäre Testmaschine
    markiert. Amiga = AMI 23.202.
+   *16.11.2026:* Testadresse jetzt **TEST 23.269** (MAC `AA-00-04-00-0D-5D`)
+   aus dem zweiten Block 23.260–23.269 für Entwicklung/Test; die Pi-Tools
+   laufen als PITOOL 23.268. 23.203 gehört dem echten A1200 (AMI1K2).

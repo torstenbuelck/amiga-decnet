@@ -3,7 +3,7 @@
  * built-in objects (MIRROR). Needs root / CAP_NET_RAW.
  *
  * Usage: dnhost [-i iface] [-a area.node] [-v]
- *   default: -i br0 (falls back to eth0) -a 23.203
+ *   default: -i br0 (falls back to eth0) -a 23.269
  *
  * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
@@ -16,7 +16,7 @@
 int main(int argc, char **argv)
 {
 	const char *ifname = NULL;
-	dn_u16 addr = (23 << 10) | 203;
+	dn_u16 addr = (23 << 10) | 269;
 	int c, verbose = 1;
 
 	while ((c = getopt(argc, argv, "i:a:v")) != -1) {
