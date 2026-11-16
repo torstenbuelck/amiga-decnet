@@ -259,6 +259,10 @@ welcome.
 
 Version history
 ---------------
+0.7 (16.11.2026)
+  - Installer and texts in German on a German AmigaOS 3.x (else
+    English); LiesMich is this text in German
+
 0.6 (26.10.2026)
   - first release for testers: dnterm.device 0.3, dntermpatch 0.1,
     latd 0.2, dnmaint 0.5; needs DECnet 0.1 or newer

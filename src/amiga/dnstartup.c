@@ -8,8 +8,13 @@
  *
  *   ;BEGIN DECnet
  *   Assign DECnet: "drawer"
+ *   Path DECnet:C DECnet:S ADD
  *   Execute DECnet:S/DECnet-Start
  *   ;END DECnet
+ *
+ * The Path line puts the DECnet commands and scripts into the command
+ * path of the boot Shell, which the Workbench and every Shell started
+ * from it inherit (dncopy, DECnet-Stop, ... without a drawer name).
  *
  * dnetd has to configure the network card before any TCP/IP stack does,
  * because a SANA-II unit is configured only once per boot. So the block
@@ -42,7 +47,7 @@
 
 #include <string.h>
 
-static const char version[] = "$VER: dnstartup 0.3 (15.11.2026)";
+static const char version[] = "$VER: dnstartup 0.3 (16.11.2026)";
 
 #define BEGIN_LINE ";BEGIN DECnet"
 #define END_LINE   ";END DECnet"
@@ -197,7 +202,8 @@ static BOOL puts_(BPTR fh, const char *s)
 static BOOL put_block(BPTR fh, const char *dir)
 {
 	return puts_(fh, BEGIN_LINE "\nAssign DECnet: \"") && puts_(fh, dir)
-	    && puts_(fh, "\"\nExecute DECnet:S/DECnet-Start\n" END_LINE "\n");
+	    && puts_(fh, "\"\nPath DECnet:C DECnet:S ADD\n"
+	                 "Execute DECnet:S/DECnet-Start\n" END_LINE "\n");
 }
 
 /*

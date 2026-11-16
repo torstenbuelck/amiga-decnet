@@ -284,6 +284,10 @@ anderen Terminalprogrammen und Rechnern sind willkommen.
 
 Versionsgeschichte
 ------------------
+0.7 (16.11.2026)
+  - Installation und Texte auf Deutsch auf einem deutschen AmigaOS 3.x
+    (sonst Englisch); LiesMich ist dieser Text auf Deutsch
+
 0.6 (26.10.2026)
   - erste Ausgabe für Tester: dnterm.device 0.3, dntermpatch 0.1,
     latd 0.2, dnmaint 0.5; braucht DECnet 0.1 oder neuer

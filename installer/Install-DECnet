@@ -1,4 +1,4 @@
-; $VER: Install-DECnet 0.2 (04.11.2026)
+; $VER: Install-DECnet 0.3 (16.11.2026)
 ;
 ; Installer script for the Amiga DECnet Phase IV endnode stack.
 ; Needs the Commodore Installer (V43 recommended) and AmigaOS 2.04.
@@ -10,12 +10,13 @@
 ;   <drawer>/DECnet/Storage  Mountlist for DN:
 ;   LIBS:decnet.library
 ;   ENVARC:DECnet/nodes      node names (kept if it already exists)
-;   S:User-Startup           block that starts DECnet before TCP/IP
+;   S:User-Startup           block that starts DECnet before TCP/IP and
+;                            puts DECnet:C and DECnet:S into the path
 ;
 ; Copyright (C) 2026  Torsten Bülck (tuti)
 ; SPDX-License-Identifier: GPL-2.0-or-later
 
-(set #version "0.2")
+(set #version "0.3")
 (set @app-name "DECnet")
 (set @default-dest "SYS:")
 
@@ -131,7 +132,8 @@
 	                  "This adds a DECnet block to S:User-Startup, in front of AmiTCP "
 	                  "or other TCP/IP software (it must start first)."))
 	(set #t-boot-help-1 "Without it, start DECnet yourself with\n  Assign DECnet: \"")
-	(set #t-boot-help-2 (cat "\"\n  Execute DECnet:S/DECnet-Start\n"
+	(set #t-boot-help-2 (cat "\"\n  Path DECnet:C DECnet:S ADD\n"
+	                         "  Execute DECnet:S/DECnet-Start\n"
 	                         "before any TCP/IP software. The old S:User-Startup is kept as "
 	                         "S:User-Startup.bak."))
 	(set #t-yes "Yes")
@@ -142,7 +144,7 @@
 	                       "Move that line below the User-Startup call."))
 	(set #t-boot-fail-1 (cat "S:User-Startup could not be changed. Add these lines "
 	                         "before any TCP/IP software:\n\nAssign DECnet: \""))
-	(set #t-boot-fail-2 "\"\nExecute DECnet:S/DECnet-Start")
+	(set #t-boot-fail-2 "\"\nPath DECnet:C DECnet:S ADD\nExecute DECnet:S/DECnet-Start")
 
 	(set #t-restart (cat "Restart DECnet now?\n\n"
 	                     "DECnet is running with the old version. Restart it to use "
@@ -303,7 +305,8 @@
 	                  "Dazu kommt ein DECnet-Block in S:User-Startup, vor AmiTCP oder "
 	                  "anderer TCP/IP-Software (DECnet muss zuerst starten)."))
 	(set #t-boot-help-1 "Ohne diesen Block starten Sie DECnet selbst mit\n  Assign DECnet: \"")
-	(set #t-boot-help-2 (cat "\"\n  Execute DECnet:S/DECnet-Start\n"
+	(set #t-boot-help-2 (cat "\"\n  Path DECnet:C DECnet:S ADD\n"
+	                         "  Execute DECnet:S/DECnet-Start\n"
 	                         "vor jeder TCP/IP-Software. Die alte S:User-Startup bleibt als "
 	                         "S:User-Startup.bak erhalten."))
 	(set #t-yes "Ja")
@@ -315,7 +318,7 @@
 	                       "User-Startup."))
 	(set #t-boot-fail-1 (cat "S:User-Startup konnte nicht geändert werden. Fügen Sie diese "
 	                         "Zeilen vor jeder TCP/IP-Software ein:\n\nAssign DECnet: \""))
-	(set #t-boot-fail-2 "\"\nExecute DECnet:S/DECnet-Start")
+	(set #t-boot-fail-2 "\"\nPath DECnet:C DECnet:S ADD\nExecute DECnet:S/DECnet-Start")
 
 	(set #t-restart (cat "DECnet jetzt neu starten?\n\n"
 	                     "DECnet läuft noch mit der alten Version. Starten Sie es neu, "
@@ -657,6 +660,10 @@
 		        ".def ADDR " #addr "\n.def UNIT " #unit "\n.def DEVICE \"" #device "\"\n")
 		(include "S/DECnet-Start.body")
 	)
+	; the script bit lets the Shell run them by name (DECnet-Stop), without
+	; Execute; LhA archives made on other systems carry no protection bits
+	(protect (tackon #target "S/DECnet-Start") "+s")
+	(protect (tackon #target "S/DECnet-Stop") "+s")
 	; both languages: the documentation is short, and either may be wanted
 	(copyfiles
 		(prompt #t-cp-doc)

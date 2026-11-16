@@ -20,8 +20,11 @@ Installation
 Doppelklicken Sie "Install-DECnet". Es fragt nach DECnet-Adresse und
 -Name dieses Amiga und nach dem Netzwerktreiber, prüft die Karte mit
 dncheck, kopiert die Dateien und trägt DECnet in S:User-Startup ein,
-vor Ihrer TCP/IP-Software. Aus der Shell: in diese Schublade wechseln
-(cd), dann
+vor Ihrer TCP/IP-Software. Dieser Block nimmt außerdem DECnet:C und
+DECnet:S in den Befehlspfad auf; nach dem nächsten Systemstart gehen
+dncopy, dndir, DECnet-Stop und die anderen Befehle also in jeder Shell
+ohne Schubladennamen. Aus der Shell: in diese Schublade wechseln (cd),
+dann
 
   Installer Install-DECnet MINUSER AVERAGE
 
@@ -270,6 +273,27 @@ Anleitung in cnetfix.lha. Für die DE-660+ nehmen Sie cnet.device.
 
 Versionsgeschichte
 ------------------
+0.3 (16.11.2026)
+  - Installation und Texte auf Deutsch auf einem deutschen AmigaOS 3.x
+    (sonst Englisch); LiesMich ist dieser Text auf Deutsch
+  - der Block in S:User-Startup nimmt auch DECnet:C und DECnet:S in
+    den Befehlspfad auf (Path ... ADD); Entfernen nimmt das mit dem
+    Block wieder heraus
+  - Installation: setzt das Script-Bit von DECnet-Start und
+    DECnet-Stop, sodass sie über ihren Namen laufen, ohne Execute
+  - Installation: "Scheinbar installieren" bricht an der Knotenliste
+    nicht mehr mit einem Fehler ab
+  - dnstartup 0.3: findet den Block von Roadshow 1.15 (";BEGIN
+    Roadshow", Execute S:Network-Startup) und setzt DECnet davor (0.2
+    setzte es dahinter); mit ";" abgeschaltete Zeilen zählen mit
+  - dncheck 0.6: sagt, wenn der Treiber die DECnet-Adresse ablehnt
+    (0.5 nannte cnet.device 1.9 im Ersatzbetrieb brauchbar, was nicht
+    stimmt), und sendet auch im Ersatzbetrieb ein Testpaket
+  - Anleitung: VMS-Namen mit Versionsnummer in der Shell in
+    Anführungszeichen setzen; Netzwerkkarten: 3C589 an BNC
+    (3c589auto.lha), NE2000-PCMCIA-Karten mit dem korrigierten
+    cnet.device (cnetfix.lha)
+
 0.2 (04.11.2026)
   - ReadMe: wie man Miami oder andere Netzwerk-Software, die aus
     S:Startup-Sequence startet, hinter den Aufruf von User-Startup

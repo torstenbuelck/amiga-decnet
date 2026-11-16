@@ -20,7 +20,10 @@ Installation
 Double-click "Install-DECnet". It asks for the DECnet address and name
 of this Amiga and the network driver, tests the card with dncheck,
 copies the files and adds DECnet to S:User-Startup, in front of your
-TCP/IP software. From the Shell: cd to this drawer, then
+TCP/IP software. That block also puts DECnet:C and DECnet:S into the
+command path, so after the next boot dncopy, dndir, DECnet-Stop and
+the other commands work in every Shell without a drawer name. From the
+Shell: cd to this drawer, then
 
   Installer Install-DECnet MINUSER AVERAGE
 
@@ -244,6 +247,25 @@ see the ReadMe in cnetfix.lha. For the DE-660+ take cnet.device.
 
 Version history
 ---------------
+0.3 (16.11.2026)
+  - Installer and texts in German on a German AmigaOS 3.x (else
+    English); LiesMich is this text in German
+  - the S:User-Startup block also adds DECnet:C and DECnet:S to the
+    command path (Path ... ADD); Remove takes it out with the block
+  - Installer: sets the script bit of DECnet-Start and DECnet-Stop, so
+    they run by name, without Execute
+  - Installer: "Pretend to install" no longer stops with an error at
+    the node list
+  - dnstartup 0.3: finds Roadshow 1.15's block (";BEGIN Roadshow",
+    Execute S:Network-Startup) and puts DECnet in front of it (0.2
+    put it after); lines switched off with ";" count as well
+  - dncheck 0.6: says when the driver rejects the DECnet address (0.5
+    called cnet.device 1.9 usable in fallback mode, which it is not)
+    and sends a test frame in fallback mode too
+  - ReadMe: quote VMS names with a version number in the Shell;
+    network cards: 3C589 on BNC (3c589auto.lha), NE2000 PCMCIA cards
+    with the fixed cnet.device (cnetfix.lha)
+
 0.2 (04.11.2026)
   - ReadMe: how to move Miami, or other network software started from
     S:Startup-Sequence, below the User-Startup call

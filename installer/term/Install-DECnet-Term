@@ -1,4 +1,4 @@
-; $VER: Install-DECnet-Term 0.6 (26.10.2026)
+; $VER: Install-DECnet-Term 0.7 (16.11.2026)
 ;
 ; Installer script for DECnet-Term, the terminal add-on of the Amiga
 ; DECnet endnode: dnterm.device (CTERM and LAT terminal sessions to other
@@ -21,7 +21,7 @@
 ; Copyright (C) 2026  Torsten Bülck (tuti)
 ; SPDX-License-Identifier: GPL-2.0-or-later
 
-(set #version "0.6")
+(set #version "0.7")
 (set @app-name "DECnet-Term")
 
 ; ---------------------------------------------------------------- texts
