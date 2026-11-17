@@ -94,4 +94,4 @@ original; the 3c589.device patch is GPL like the original.
 
 Copyright (C) 2026 Torsten Bülck (tuti). Discussion and reports:
 [forum.classic-computing.de](https://forum.classic-computing.de), thread
-"DECnet auf dem Amiga".
+[DECnet auf dem Amiga](https://forum.classic-computing.de/forum/index.php?thread/41220-decnet-auf-dem-amiga/&postID=647955#post647955).
