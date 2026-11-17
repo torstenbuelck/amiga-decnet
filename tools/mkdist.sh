@@ -22,7 +22,9 @@ make -C "$DIR/src/term" >/dev/null
 make -C "$DIR/src/maint" >/dev/null
 make -C "$DIR/src/lat" latd >/dev/null
 
-rm -rf "$OUT"
+# only what this script makes: dist/ also holds hand-built ADFs
+rm -rf "$PKG" "$OUT/DECnet-Term" "$OUT/icons.tmp" \
+      "$OUT"/{DECnet,DECnet-Term}.{lha,info}
 mkdir -p "$PKG"/{C,L,S,Libs,Storage,Icons}
 
 cp "$DIR/installer/Install-DECnet" "$DIR/installer/ReadMe" "$DIR/installer/LiesMich" "$PKG/"
