@@ -12,7 +12,8 @@
  * Units 4 to 7 do the same with LAT services instead: "ATD HOWIE" there
  * opens a LAT session to the service HOWIE through latd (src/lat),
  * which carries the terminal stream as it is; SDCMD_BREAK sends a
- * BREAK.
+ * BREAK. "ATD LAT HOWIE" and "ATD CTERM HOWIE" pick the protocol for
+ * that one call on any unit, for programs with a fixed unit (VAXterm).
  *
  * Every unit has a process of its own: it serves the IORequests, talks
  * to dnetd (or latd) and runs the CTERM client (src/cterm). It speaks
@@ -48,8 +49,8 @@
 
 #define DEVNAME   "dnterm.device"
 #define VERSION   0
-#define REVISION  3
-#define IDSTRING  "dnterm.device 0.3 (25.10.2026)\r\n"
+#define REVISION  4
+#define IDSTRING  "dnterm.device 0.4 (17.11.2026)\r\n"
 
 #define NUNITS    8
 #define LATUNIT   4             /* units from here on are LAT */
@@ -75,7 +76,7 @@ static const char idstring[] = IDSTRING;
 struct DtUnit {
 	struct Unit u;                  /* unit_MsgPort gets the IORequests */
 	int num;
-	int lat;                        /* a LAT unit: talks to latd */
+	int lat;                        /* this call is LAT: talks to latd */
 	int shared;                     /* opened with SERF_SHARED */
 	struct Process *proc;
 	struct Message *quit;           /* from the last CloseDevice */
@@ -387,6 +388,47 @@ static void reset_modem(struct DtUnit *u)
 	u->verbose = 1;
 }
 
+/* "LAT " or "CTERM " (any case, then blanks) at *p: skip it */
+static int keyword(const char **p, const char *kw)
+{
+	const char *s = *p;
+
+	while (*kw)
+		if (upper(*s++) != *kw++)
+			return 0;
+	if (*s != ' ')
+		return 0;
+	while (*s == ' ')
+		s++;
+	*p = s;
+	return 1;
+}
+
+/* the protocol of this call: the unit's own, or LAT/CTERM in front of
+   the name (after the T or P of ATDT/ATDP); the name without it */
+static const char *protocol(struct DtUnit *u, const char *name)
+{
+	const char *p = name;
+
+	u->lat = u->num >= LATUNIT;
+	if (upper(*p) == 'T' || upper(*p) == 'P') {
+		const char *q = p + 1;
+		while (*q == ' ')
+			q++;
+		if (keyword(&q, "LAT") || keyword(&q, "CTERM"))
+			p = p + 1;
+		while (*p == ' ')
+			p++;
+		if (p == name)
+			return name;        /* a node name with T or P */
+	}
+	if (keyword(&p, "LAT"))
+		u->lat = 1;
+	else if (keyword(&p, "CTERM"))
+		u->lat = 0;
+	return p;
+}
+
 static void dial(struct DtUnit *u, const char *name)
 {
 	struct Library *DECnetBase;
@@ -396,6 +438,7 @@ static void dial(struct DtUnit *u, const char *name)
 		result(u, R_ERROR);
 		return;
 	}
+	name = protocol(u, name);
 	if (!*name) {
 		say(u, u->lat ? "No service given (ATD SERVICE)" : "No node given (ATD NODE)");
 		result(u, R_ERROR);
@@ -569,7 +612,7 @@ static void at_command(struct DtUnit *u, const char *s)
 			break;
 		case 'I':
 			number(&p);
-			say(u, u->lat ? "dnterm.device 0.3, LAT" : "dnterm.device 0.3, DECnet CTERM");
+			say(u, u->num >= LATUNIT ? "dnterm.device 0.4, LAT" : "dnterm.device 0.4, DECnet CTERM");
 			break;
 		case 'O':
 			number(&p);

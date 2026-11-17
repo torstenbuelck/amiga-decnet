@@ -71,6 +71,18 @@ Dienst:
 
   ATD VAX1        am LAT-Dienst VAX1 anmelden
 
+Auf jeder Unit lässt sich das Protokoll auch beim Wählen bestimmen:
+LAT oder CTERM vor dem Namen gilt für diesen einen Anruf, danach wählt
+die Unit wieder wie gewohnt.
+
+  ATD LAT VAX1    LAT-Dienst VAX1, auch auf Unit 0 bis 3
+  ATD CTERM VAX1  Knoten VAX1 über CTERM, auch auf Unit 4 bis 7
+
+Zwischen dem Wort und dem Namen steht mindestens ein Leerzeichen;
+Groß- und Kleinschreibung spielen keine Rolle. Im Telefonbuch geben
+Sie z. B. "LAT VAX1" als Nummer an. Das hilft vor allem bei
+Programmen mit fest eingestellter Unit wie VAXterm (siehe unten).
+
 VMS-Systeme mit LAT bieten einen Dienst mit dem Namen des Knotens an;
 Terminalserver und andere Systeme bieten ihre unter anderen Namen an.
 Um die Dienste in Ihrem Netz zu sehen, tippen Sie in einer Shell:
@@ -87,7 +99,8 @@ auf den Dienst.
 Die Units 4 bis 7 sind getrennte Leitungen wie die Units 0 bis 3;
 Sitzungen zum selben Knoten teilen sich einen LAT-Circuit. VMS zeigt
 die Leitung als "LAT Server/Port: MYAMI/LAT4" (Ihr Knotenname aus
-ENV:DECnet/Name, hier MYAMI, und die Unit). Ein BREAK des
+ENV:DECnet/Name, hier MYAMI, und die Unit, auch bei ATD LAT auf
+Unit 0 bis 3). Ein BREAK des
 Terminalprogramms geht an den Rechner.
 
 LAT verschlüsselt, wie CTERM, nicht: Alles, was Sie tippen, Passwörter
@@ -131,7 +144,8 @@ Zeichensätze und Einstellungsdateien dort) und starten Sie
 VAXterm.dnterm. Es benutzt Unit 1 von dnterm.device; eine Sitzung in
 Term auf Unit 0 kann also offen bleiben. VAXterm hat eine eigene
 Tastaturbelegung (voreingestellt US); F3 öffnet seine Set-up-Seite,
-dort lässt sich die deutsche Belegung wählen.
+dort lässt sich die deutsche Belegung wählen. Einen LAT-Dienst
+erreicht VAXterm.dnterm mit ATD LAT und dem Namen des Dienstes.
 
 dntermpatch funktioniert mit jedem Programm, in dem "serial.device"
 fest eingebaut ist: Es schreibt eine Kopie und lässt das Original in
@@ -141,6 +155,8 @@ Ruhe.
 Modembefehle
 ------------
   ATD Knoten  verbinden (jede Taste während des Wählens bricht ab)
+  ATD LAT Dienst, ATD CTERM Knoten
+              dieser eine Anruf über LAT bzw. CTERM, auf jeder Unit
   +++         zurück in den Befehlsmodus, die Verbindung bleibt: vorher
               und nachher eine Sekunde lang nichts tippen
   ATO         nach +++ zurück in die Verbindung
@@ -194,15 +210,19 @@ jede Datei lesen, ändern und löschen, jedes Programm starten. Schalten
 Sie ihn nur ein, wenn Sie ihn brauchen, und nur für Knoten, denen Sie
 vertrauen.
 
-- Nur die DECnet-Knoten, die Sie nennen, dürfen sich verbinden; die
-  Installation fragt danach (Adressen oder Namen aus Ihrer
-  Knotenliste, getrennt durch Leerzeichen oder Kommas, z. B.
-  1.10 VAX1). Eine Verbindung von jedem anderen Knoten wird
-  abgewiesen, bevor irgendetwas gefragt wird. Über LAT gilt das für
-  die Terminalserver, die Sie nennen (siehe unten). Lassen Sie die
-  DECnet-Knoten leer, um nur LAT zu erlauben; sind beide Listen leer,
-  kommt niemand hinein, deshalb bietet die Installation dann an, den
-  Zugang auszuschalten.
+- Nur die Rechner, die Sie nennen, dürfen sich verbinden. Die
+  Installation fragt danach in zwei getrennten Schritten:
+    1. DECnet-Knoten, für CTERM (VMS: SET HOST): Adressen oder Namen
+       aus Ihrer Knotenliste, z. B. 1.10 VAX1
+    2. danach LAT-Terminalserver, für LAT (VMS: SET HOST/LAT):
+       LAT-Knotennamen, auch NAME/PORT, z. B. VAX1 WEBTERM/web.anna
+       (siehe unten)
+  Die Einträge einer Liste trennen Sie durch Leerzeichen oder Kommas.
+  Jede der beiden Listen darf leer bleiben: Dann ist dieser Weg zu,
+  und nur der andere ist offen. Sind beide leer, kommt niemand hinein;
+  deshalb bietet die Installation dann an, den Zugang auszuschalten.
+  Eine Verbindung von jedem anderen Rechner wird abgewiesen, bevor
+  irgendetwas gefragt wird.
 - Nach dem Verbindungsaufbau kommt "Password:" (ohne Echo). Nach drei
   falschen Antworten wird die Verbindung beendet, jeweils nach einer
   Pause.
@@ -231,9 +251,9 @@ Ctrl-A/Ctrl-E), Ctrl-X löscht die Zeile, Ctrl-K den Rest davon. Cursor
 hoch/runter blättern durch die letzten 20 in dieser Sitzung getippten
 Zeilen. Das Terminal sollte ein VT100 oder kompatibel sein.
 
-Über LAT: Die Installation fragt auch nach LAT-Terminalservern (mit
-ihren LAT-Knotennamen, getrennt durch Leerzeichen oder Kommas, z. B.
-VAX1 TSERV2). Nennen Sie welche, wird der Zugang als LAT-Dienst mit dem
+Über LAT: Im zweiten Schritt fragt die Installation nach
+LAT-Terminalservern (mit ihren LAT-Knotennamen, getrennt durch
+Leerzeichen oder Kommas, z. B. VAX1 TSERV2). Nennen Sie welche, wird der Zugang als LAT-Dienst mit dem
 Namen dieses Amiga (ENV:DECnet/Name) angeboten, solange latd läuft. Auf
 einem VMS-Knoten aus der Liste:
 
@@ -244,11 +264,21 @@ Terminalserver, die nicht in der Liste stehen, werden abgewiesen, bevor
 irgendetwas gefragt wird. Gefragt wird dasselbe Passwort, und die
 Sitzung funktioniert wie über CTERM.
 
-Einen Terminalserver, den viele benutzen (etwa ein Web-Terminal),
-können Sie auf einen seiner Ports einschränken: NAME/PORT, z. B.
-TSERV2/PORT_5, lässt nur diesen Port hinein. T:dnmaint.log zeigt Knoten
-und Port jeder Verbindung, auch der abgewiesenen; dort können Sie sie
-nachsehen.
+Manche Terminalserver bedienen viele Benutzer, etwa ein Web-Terminal,
+das im Browser eine LAT-Sitzung öffnet. Solche Server geben oft jedem
+angemeldeten Benutzer einen eigenen Port, in dessen Namen der
+Benutzername steht. Mit NAME/PORT lassen Sie nur diesen einen Port
+hinein, also nur sich selbst, nicht jeden anderen Benutzer desselben
+Servers. Ein Beispiel: Ein Web-Terminal erscheint im LAN als LAT-Knoten
+WEBTERM und nennt den Port der Benutzerin anna "web.anna". Dann lässt
+
+  WEBTERM/web.anna
+
+nur die Sitzungen hinein, die anna dort öffnet. Groß- und
+Kleinschreibung spielen keine Rolle. Die genauen Namen müssen Sie nicht
+raten: Verbinden Sie sich einmal. Die Verbindung wird abgewiesen, und
+T:dnmaint.log zeigt Knoten und Port. Diese tragen Sie dann ein
+(Install-DECnet-Term noch einmal starten).
 
 LAT hat keine Adressen: Jeder in Ihrem LAN kann einem Terminalserver
 einen beliebigen Namen geben. Die Liste hält also zufällige Besucher
@@ -284,6 +314,15 @@ anderen Terminalprogrammen und Rechnern sind willkommen.
 
 Versionsgeschichte
 ------------------
+0.8 (17.11.2026)
+  - dnterm.device 0.4: ATD LAT und ATD CTERM wählen das Protokoll für
+    einen Anruf auf jeder Unit, z. B. LAT mit VAXterm (fest Unit 1)
+  - Wartungszugang: NAME/PORT für Web-Terminals mit Beispiel erklärt;
+    die Installation sagt bei den DECnet-Knoten, dass die
+    LAT-Terminalserver im nächsten Schritt kommen
+  - DECnet-Start-Term und DECnet-Stop-Term bekommen das Skript-Bit
+    wie DECnet-Start und DECnet-Stop
+
 0.7 (16.11.2026)
   - Installation und Texte auf Deutsch auf einem deutschen AmigaOS 3.x
     (sonst Englisch); LiesMich ist dieser Text auf Deutsch

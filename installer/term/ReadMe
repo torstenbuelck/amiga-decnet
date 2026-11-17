@@ -67,6 +67,18 @@ nodes. Choose unit 4 in the terminal program, then dial the service:
 
   ATD VAX1        log in to the LAT service VAX1
 
+On any unit the protocol can also be chosen when dialling: LAT or
+CTERM in front of the name holds for that one call; afterwards the
+unit dials as usual again.
+
+  ATD LAT VAX1    LAT service VAX1, also on units 0 to 3
+  ATD CTERM VAX1  node VAX1 over CTERM, also on units 4 to 7
+
+At least one blank goes between the word and the name; case does not
+matter. In a phone book, give e.g. "LAT VAX1" as the number. This
+helps most with programs that have a fixed unit, such as VAXterm (see
+below).
+
 VMS systems with LAT offer a service named after the node; terminal
 servers and other systems offer theirs under other names. To see the
 services on your network, type in a Shell:
@@ -81,8 +93,8 @@ to 60 seconds. A dial waits up to 30 seconds for the service.
 "Unknown LAT service" means that no node offers that name. Units 4 to
 7 are separate lines like units 0 to 3; sessions to the same node share
 one LAT circuit. VMS shows the line as "LAT Server/Port: MYAMI/LAT4"
-(your node name from ENV:DECnet/Name, here MYAMI, and the unit). A
-BREAK of the terminal program is sent to the host.
+(your node name from ENV:DECnet/Name, here MYAMI, and the unit, also
+with ATD LAT on units 0 to 3). A BREAK of the terminal program is sent to the host.
 
 LAT, like CTERM, does not encrypt: everything you type, passwords
 included, can be read by anyone who watches the network.
@@ -119,7 +131,8 @@ Keep the copy in the VAXterm drawer (it needs its fonts and setup
 files there) and start VAXterm.dnterm. It uses unit 1 of
 dnterm.device, so a session in Term on unit 0 can stay open. VAXterm
 has a keyboard layout of its own (US by default); F3 opens its set-up
-page, where the German layout can be chosen.
+page, where the German layout can be chosen. VAXterm.dnterm reaches a
+LAT service with ATD LAT and the name of the service.
 
 dntermpatch works on any program that has "serial.device" built in:
 it writes a copy and leaves the original alone.
@@ -128,6 +141,8 @@ it writes a copy and leaves the original alone.
 Modem commands
 --------------
   ATD node   connect (any key while it dials stops it)
+  ATD LAT service, ATD CTERM node
+             this one call over LAT or CTERM, on any unit
   +++        back to command mode, the link stays up: one second
              without typing before and after it
   ATO        back online after +++
@@ -177,13 +192,18 @@ can be done that you can do at this Amiga's keyboard: read, change and
 delete every file, start any program. Enable it only if you need it,
 and only for nodes you trust.
 
-- Only the DECnet nodes you name may connect; they are asked during
-  the installation (addresses or names from your node list, separated
-  by blanks or commas, e.g. 1.10 VAX1). A connect from any other node
-  is refused before anything is asked. Over LAT, the terminal servers
-  you name (see below). Leave the DECnet nodes empty to allow LAT
-  only; with both lists empty nobody gets in, so the installation
-  offers to switch the login off instead.
+- Only the machines you name may connect. The installation asks for
+  them in two separate steps:
+    1. DECnet nodes, for CTERM (VMS: SET HOST): addresses or names
+       from your node list, e.g. 1.10 VAX1
+    2. then LAT terminal servers, for LAT (VMS: SET HOST/LAT): LAT
+       node names, also NAME/PORT, e.g. VAX1 WEBTERM/web.anna (see
+       below)
+  Separate the entries of a list by blanks or commas. Either list may
+  stay empty: that way in is then closed, and only the other one is
+  open. With both empty nobody gets in, so the installation offers to
+  switch the login off instead. A connect from any other machine is
+  refused before anything is asked.
 - After the connect comes "Password:" (no echo). Three wrong answers
   end the connection, each after a pause.
 - The password is stored as plain text in ENVARC:DECnet/maint-password
@@ -209,8 +229,8 @@ erases the line, Ctrl-K the rest of it. Cursor up/down go through the
 last 20 lines typed in this session. The terminal should be a VT100 or
 compatible.
 
-Over LAT: the installation also asks for LAT terminal servers (by
-their LAT node names, separated by blanks or commas, e.g. VAX1 TSERV2).
+Over LAT: in the second step the installation asks for LAT terminal
+servers (by their LAT node names, separated by blanks or commas, e.g. VAX1 TSERV2).
 If you name any, the login is offered as a LAT service named like this
 Amiga (ENV:DECnet/Name), as long as latd runs. On a VMS node in the
 list:
@@ -221,10 +241,20 @@ and on a terminal server its connect command for that service. Terminal
 servers not in the list are refused before anything is asked. The
 same password is asked, and the session works as over CTERM.
 
-A terminal server many people use (a web terminal, say) can be
-narrowed to one of its ports: NAME/PORT, e.g. TSERV2/PORT_5, lets only
-that port in. T:dnmaint.log shows node and port of every connect, also
-of refused ones, so you can look them up there.
+Some terminal servers serve many users, such as a web terminal that
+opens a LAT session in the browser. Such servers often give every
+logged-in user a port of their own, with the user name in the port's
+name. NAME/PORT lets only that one port in: only you, not every other
+user of the same server. An example: a web terminal shows up on the
+LAN as LAT node WEBTERM and names the port of its user anna
+"web.anna". Then
+
+  WEBTERM/web.anna
+
+lets in only the sessions anna opens there. Case does not matter. You
+need not guess the exact names: connect once. The connect is refused,
+and T:dnmaint.log shows node and port. Enter those (run
+Install-DECnet-Term again).
 
 LAT has no addresses: anyone on your LAN can give a terminal server
 any name, so the list keeps chance visitors out, not someone who sets
@@ -259,6 +289,15 @@ welcome.
 
 Version history
 ---------------
+0.8 (17.11.2026)
+  - dnterm.device 0.4: ATD LAT and ATD CTERM choose the protocol for
+    one call on any unit, e.g. LAT with VAXterm (fixed unit 1)
+  - maintenance login: NAME/PORT for web terminals explained with an
+    example; the installer says at the DECnet nodes that the LAT
+    terminal servers come in the next step
+  - DECnet-Start-Term and DECnet-Stop-Term get the script bit, like
+    DECnet-Start and DECnet-Stop
+
 0.7 (16.11.2026)
   - Installer and texts in German on a German AmigaOS 3.x (else
     English); LiesMich is this text in German

@@ -1,4 +1,4 @@
-; $VER: Install-DECnet-Term 0.7 (16.11.2026)
+; $VER: Install-DECnet-Term 0.8 (17.11.2026)
 ;
 ; Installer script for DECnet-Term, the terminal add-on of the Amiga
 ; DECnet endnode: dnterm.device (CTERM and LAT terminal sessions to other
@@ -21,7 +21,7 @@
 ; Copyright (C) 2026  Torsten Bülck (tuti)
 ; SPDX-License-Identifier: GPL-2.0-or-later
 
-(set #version "0.7")
+(set #version "0.8")
 (set @app-name "DECnet-Term")
 
 ; ---------------------------------------------------------------- texts
@@ -38,13 +38,15 @@
 	                   "Addresses (area.node) or names from your node list of the "
 	                   "DECnet nodes allowed to use the maintenance login, "
 	                   "separated by blanks or commas. Connects from every other "
-	                   "node are refused. Leave it empty for LAT only."))
+	                   "node are refused. Leave it empty for LAT only.\n\n"
+	                   "LAT terminal servers come in the next step."))
 	(set #t-nodes-help (cat "Only these nodes get the password prompt; dnmaint rejects all "
 	                        "others before anything is asked. Choose the machines you "
 	                        "maintain this Amiga from (VMS: SET HOST).\n\n"))
 	(set #t-nodes-bad (cat "\" is neither a DECnet address (area.node, "
 	                       "area 1-63, node 1-1023) nor a node name (1-6 letters "
-	                       "and digits)."))
+	                       "and digits).\n\nLAT terminal servers (also NAME/PORT) "
+	                       "come in the next step."))
 	(set #t-lat (cat "Which LAT terminal servers may log in?\n\n"
 	                 "LAT node names of the terminal servers (or VMS nodes, "
 	                 "SET HOST/LAT) allowed to use the maintenance login, "
@@ -150,14 +152,16 @@
 	                   "Adressen (Bereich.Knoten) oder Namen aus Ihrer Knotenliste "
 	                   "der DECnet-Knoten, die den Wartungszugang benutzen dürfen, "
 	                   "getrennt durch Leerzeichen oder Kommas. Verbindungen von allen "
-	                   "anderen Knoten werden abgewiesen. Leer lassen für nur LAT."))
+	                   "anderen Knoten werden abgewiesen. Leer lassen für nur LAT.\n\n"
+	                   "LAT-Terminalserver kommen im nächsten Schritt."))
 	(set #t-nodes-help (cat "Nur diese Knoten bekommen die Passwortabfrage; dnmaint weist "
 	                        "alle anderen ab, bevor irgendetwas gefragt wird. Wählen Sie "
 	                        "die Rechner, von denen aus Sie diesen Amiga warten (VMS: "
 	                        "SET HOST).\n\n"))
 	(set #t-nodes-bad (cat "\" ist weder eine DECnet-Adresse (Bereich.Knoten, "
 	                       "Bereich 1-63, Knoten 1-1023) noch ein Knotenname (1-6 "
-	                       "Buchstaben und Ziffern)."))
+	                       "Buchstaben und Ziffern).\n\nLAT-Terminalserver (auch "
+	                       "NAME/PORT) kommen im nächsten Schritt."))
 	(set #t-lat (cat "Welche LAT-Terminalserver dürfen sich anmelden?\n\n"
 	                 "LAT-Knotennamen der Terminalserver (oder VMS-Knoten, "
 	                 "SET HOST/LAT), die den Wartungszugang benutzen dürfen, "
@@ -569,6 +573,11 @@
 				(dest "DECnet:S")
 				(choices "DECnet-Start-Term" "DECnet-Stop-Term")
 			)
+			; the script bit lets the Shell run them by name, as DECnet-Start
+			; and DECnet-Stop; LhA archives made on other systems carry no
+			; protection bits
+			(protect "DECnet:S/DECnet-Start-Term" "+s")
+			(protect "DECnet:S/DECnet-Stop-Term" "+s")
 			(P_MAINT)
 			(P_LAT)
 		)
