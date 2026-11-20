@@ -12,9 +12,12 @@
 #   ETH   (eth0)              DECnet strand, port of BR
 #   BR    (br0)               bridge, no IP; DECnet tools on the Pi use -i br0
 #
-# Usage: sudo tools/dn-ap.sh start|confirm|stop|status
+# Usage: sudo tools/dn-ap.sh start|confirm|open [min]|secure|stop|status
 #   start    bring it up; reverts by itself after TIMEOUT s unless confirmed
 #   confirm  cancel the automatic revert
+#   open     switch the running AP to "<SSID>-OPEN" without encryption;
+#            back to WPA2 by itself after min minutes (default 15, max 60)
+#   secure   back to the WPA2 AP now
 #   stop     tear down and return to the normal setup
 #
 # Config file (default ~/.config/dn-ap.conf of the sudo user, or DN_AP_CONF):
@@ -32,6 +35,7 @@ C_BR=dn-br0
 C_ETH=dn-br0-eth0
 C_AP=dn-ap
 TIMER=dn-ap-deadman
+TIMER_OPEN=dn-ap-open
 STATE=/run/dn-ap.state
 LOG=/run/dn-ap.log
 SELF=$(readlink -f "$0")
@@ -73,6 +77,7 @@ do_stop() {
 	orig_eth=$(sed -n 's/^ORIG_ETH=//p' "$STATE" 2>/dev/null)
 	orig_ap=${orig_ap:-TUTIS}
 
+	systemctl stop "$TIMER_OPEN.timer" >/dev/null 2>&1
 	log "removing AP and bridge"
 	con_drop "$C_AP"; con_drop "$C_ETH"; con_drop "$C_BR"
 	ip link show "$BR" >/dev/null 2>&1 && ip link delete "$BR" 2>/dev/null
@@ -163,6 +168,39 @@ do_start() {
 	do_status
 }
 
+AP_SEC=(wifi-sec.key-mgmt wpa-psk wifi-sec.proto rsn
+	wifi-sec.pairwise ccmp wifi-sec.group ccmp wifi-sec.pmf 1)
+
+do_open() {   # open (unencrypted) AP "<SSID>-OPEN" for at most $1 minutes
+	local min=${1:-15}
+	case $min in [1-9]|[1-5][0-9]|60) ;; *) die "minutes must be 1..60" ;; esac
+	con_exists "$C_AP" || die "AP not running - use start first"
+	read_conf
+	log "AP open (no encryption) as '<SSID>-OPEN', back to WPA2 in $min min"
+	systemctl stop "$TIMER_OPEN.timer" >/dev/null 2>&1
+	nmcli connection modify --temporary "$C_AP" remove wifi-sec \
+	&& nmcli connection modify --temporary "$C_AP" 802-11-wireless.ssid "$SSID-OPEN" \
+	&& nmcli --wait 45 connection up "$C_AP" >/dev/null \
+		|| { log "opening failed - reverting"; do_secure; exit 1; }
+	systemd-run --quiet --unit="$TIMER_OPEN" --on-active="${min}m" \
+		"$SELF" secure timer >/dev/null \
+		|| log "WARNING: auto-close timer not armed - run '$0 secure' yourself"
+	do_status
+}
+
+do_secure() {   # back to the WPA2 AP from the config file
+	[ "${1:-}" = timer ] && log "open-AP timer expired" \
+		|| systemctl stop "$TIMER_OPEN.timer" >/dev/null 2>&1
+	con_exists "$C_AP" || { log "AP not running - nothing to secure"; return; }
+	read_conf
+	nmcli connection modify --temporary "$C_AP" 802-11-wireless.ssid "$SSID" \
+		"${AP_SEC[@]}" \
+	&& nmcli --wait 45 connection up "$C_AP" passwd-file \
+		<(printf '802-11-wireless-security.psk:%s\n' "$PSK") >/dev/null \
+	&& log "AP back to WPA2" \
+		|| { log "WPA2 restore failed - stopping AP"; do_stop; exit 1; }
+}
+
 do_status() {
 	echo "--- devices"
 	nmcli -f DEVICE,TYPE,STATE,CONNECTION device status
@@ -178,7 +216,9 @@ do_status() {
 case ${1:-} in
 start)   do_start ;;
 confirm) disarm; log "dead-man cancelled - AP stays until 'stop' or reboot" ;;
+open)    do_open "${2:-}" ;;
+secure)  do_secure "${2:-}" ;;
 stop)    do_stop "${2:-}" ;;
 status)  do_status ;;
-*)       echo "usage: $0 start|confirm|stop|status" >&2; exit 2 ;;
+*)       echo "usage: $0 start|confirm|open [min]|secure|stop|status" >&2; exit 2 ;;
 esac
