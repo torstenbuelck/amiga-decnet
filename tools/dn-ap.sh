@@ -14,11 +14,18 @@
 #
 # Usage: sudo tools/dn-ap.sh start|confirm|open [min]|secure|stop|status
 #   start    bring it up; reverts by itself after TIMEOUT s unless confirmed
-#   confirm  cancel the automatic revert
+#   confirm  cancel the automatic revert (the watchdog stays active)
 #   open     switch the running AP to "<SSID>-OPEN" without encryption;
 #            back to WPA2 by itself after min minutes (default 15, max 60)
 #   secure   back to the WPA2 AP now
 #   stop     tear down and return to the normal setup
+#   check    (internal) watchdog run, see below
+#
+# Watchdog: while the AP is up, a systemd timer runs 'check' every
+# WATCH_EVERY s, also after 'confirm'. If the internet is not reachable via
+# STICK, the stick is re-activated; after WATCH_FAILS failures in a row
+# everything is reverted with 'stop', so the Pi never stays offline.
+# The log is kept in /var/log/dn-ap.log so it survives a reboot.
 #
 # Config file (default ~/.config/dn-ap.conf of the sudo user, or DN_AP_CONF):
 #   SSID=...   PSK=... (8-63 chars)   CHAN=1..13
@@ -29,6 +36,8 @@ APIF=${APIF:-wlan0}
 ETH=${ETH:-eth0}
 BR=${BR:-br0}
 TIMEOUT=${TIMEOUT:-180}
+WATCH_EVERY=${WATCH_EVERY:-60}
+WATCH_FAILS=${WATCH_FAILS:-3}
 
 C_STICK=dn-stick
 C_BR=dn-br0
@@ -36,8 +45,11 @@ C_ETH=dn-br0-eth0
 C_AP=dn-ap
 TIMER=dn-ap-deadman
 TIMER_OPEN=dn-ap-open
+WATCH=dn-ap-watch
 STATE=/run/dn-ap.state
-LOG=/run/dn-ap.log
+FAILS=/run/dn-ap.fails
+LOCK=/run/dn-ap.lock
+LOG=/var/log/dn-ap.log
 SELF=$(readlink -f "$0")
 
 log() { printf '%s %s\n' "$(date +%T)" "$*" | tee -a "$LOG"; }
@@ -70,8 +82,50 @@ read_conf() {
 
 disarm() { systemctl stop "$TIMER.timer" >/dev/null 2>&1; }
 
+arm_watch() {
+	systemctl stop "$WATCH.timer" "$WATCH.service" >/dev/null 2>&1
+	systemctl reset-failed "$WATCH.timer" "$WATCH.service" >/dev/null 2>&1
+	rm -f "$FAILS"
+	systemd-run --quiet --unit="$WATCH" --timer-property=AccuracySec=1s --on-active="$WATCH_EVERY" \
+		--on-unit-active="$WATCH_EVERY" "$SELF" check
+}
+
+do_check() {   # watchdog run: is the internet still reachable via STICK?
+	local n
+	if ! con_exists "$C_AP" && [ ! -e "$STATE" ]; then
+		log "watch: AP not running - watchdog off"
+		systemctl stop "$WATCH.timer" >/dev/null 2>&1
+		return
+	fi
+	if online_via "$STICK"; then
+		[ -s "$FAILS" ] && log "watch: online via $STICK again"
+		rm -f "$FAILS"
+		return
+	fi
+	n=$(( $(cat "$FAILS" 2>/dev/null || echo 0) + 1 ))
+	echo "$n" > "$FAILS"
+	log "watch: no internet via $STICK ($n/$WATCH_FAILS)"
+	if [ "$n" -ge "$WATCH_FAILS" ]; then
+		log "watch: giving up - reverting"
+		do_stop watch
+		return
+	fi
+	log "watch: re-activating $C_STICK on $STICK"
+	nmcli --wait 30 connection up "$C_STICK" ifname "$STICK" >/dev/null 2>&1 \
+		|| log "watch: re-activation failed"
+}
+
 do_stop() {
-	[ "${1:-}" = deadman ] && log "dead-man timer expired - reverting" || disarm
+	case ${1:-} in
+	deadman) log "dead-man timer expired - reverting" ;;
+	watch)   ;;
+	*)       if [ ! -e "$STATE" ] && ! con_exists "$C_AP"; then
+			log "stop: nothing running"; return
+		fi ;;
+	esac
+	# stopping a timer does not stop a service it has just started
+	systemctl stop "$TIMER.timer" "$WATCH.timer" >/dev/null 2>&1
+	rm -f "$FAILS"
 	local orig_ap orig_eth
 	orig_ap=$(sed -n 's/^ORIG_AP=//p' "$STATE" 2>/dev/null)
 	orig_eth=$(sed -n 's/^ORIG_ETH=//p' "$STATE" 2>/dev/null)
@@ -83,7 +137,7 @@ do_stop() {
 	ip link show "$BR" >/dev/null 2>&1 && ip link delete "$BR" 2>/dev/null
 
 	if [ -n "$orig_eth" ] && con_exists "$orig_eth"; then
-		nmcli connection up "$orig_eth" ifname "$ETH" >/dev/null 2>&1 &
+		nmcli connection up "$orig_eth" ifname "$ETH" >/dev/null 2>&1 9>&- &
 	fi
 
 	log "reconnecting '$orig_ap' on $APIF"
@@ -104,7 +158,7 @@ do_start() {
 		&& die "already running (use stop first)"
 	ip link show "$STICK" >/dev/null 2>&1 || die "$STICK not present - stick plugged in at the back?"
 	read_conf
-	: > "$LOG"
+	log "===== start ====="
 
 	local orig_ap orig_eth
 	orig_ap=$(nmcli -t -f NAME,DEVICE connection show --active | sed -n "s/:$APIF\$//p" | head -1)
@@ -133,9 +187,11 @@ do_start() {
 	# 2. dead-man: from here on, revert automatically unless confirmed
 	systemctl stop "$TIMER.timer" "$TIMER.service" >/dev/null 2>&1
 	systemctl reset-failed "$TIMER.service" "$TIMER.timer" >/dev/null 2>&1
-	systemd-run --quiet --unit="$TIMER" --on-active="$TIMEOUT" "$SELF" stop deadman \
+	systemd-run --quiet --unit="$TIMER" --timer-property=AccuracySec=1s --on-active="$TIMEOUT" "$SELF" stop deadman \
 		|| { do_stop; die "could not arm dead-man timer - reverted"; }
 	log "dead-man armed: automatic revert in ${TIMEOUT}s unless 'confirm'"
+	arm_watch || { do_stop; die "could not arm watchdog - reverted"; }
+	log "watchdog armed: check every ${WATCH_EVERY}s, revert after $WATCH_FAILS failures"
 
 	# 3. bridge with eth0
 	log "step 2: bridge $BR with $ETH"
@@ -211,14 +267,27 @@ do_status() {
 	iw dev "$APIF" station dump 2>/dev/null | grep -c '^Station' | sed 's/^/stations: /'
 	echo "--- dead-man"
 	systemctl list-timers "$TIMER.timer" --no-legend 2>/dev/null | grep . || echo "(not armed)"
+	echo "--- watchdog"
+	systemctl list-timers "$WATCH.timer" --no-legend 2>/dev/null | grep . || echo "(not armed)"
+	[ -s "$FAILS" ] && echo "failures in a row: $(cat "$FAILS")"
+	echo "--- log ($LOG)"
+	tail -n 5 "$LOG" 2>/dev/null
 }
+
+# one switching action at a time (manual call, dead-man, watchdog, open timer)
+case ${1:-} in
+start|confirm|open|secure|stop|check)
+	exec 9>"$LOCK"
+	flock -w 150 9 || die "another dn-ap action is still running" ;;
+esac
 
 case ${1:-} in
 start)   do_start ;;
-confirm) disarm; log "dead-man cancelled - AP stays until 'stop' or reboot" ;;
+confirm) disarm; log "dead-man cancelled - AP stays until 'stop' or reboot (watchdog active)" ;;
 open)    do_open "${2:-}" ;;
 secure)  do_secure "${2:-}" ;;
 stop)    do_stop "${2:-}" ;;
+check)   do_check ;;
 status)  do_status ;;
 *)       echo "usage: $0 start|confirm|open [min]|secure|stop|status" >&2; exit 2 ;;
 esac
