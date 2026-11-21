@@ -210,8 +210,11 @@ getestet (dncheck, DN: und dncopy, 7 MB gelesen und unverändert
 zurückgeschrieben):
 
   Karte                 Treiber                         Ergebnis
-  A2065                 a2065.device 2.16a (Aminet)     geht, auch auf
-                                                        echtem A3000
+  Commodore A2065       a2065.device 2.16a (Aminet)     geht
+                        a2065.device 2.16 (AmiTCP-      geht auf echtem
+                        Diskette)                       A4000 (68EC030)
+  Ameristar (A2065-     a2065.device 2.16               geht auf echtem
+  kompatibel)                                           A3000
   Hydra AmigaNet        hydra.device 1.44 (Aminet)      geht
   X-Surf                x-surf.device 1.16 (iComp)      geht
   X-Surf 100            x-surf-100.device 1.16 (iComp)  geht
@@ -231,13 +234,13 @@ zurückgeschrieben):
   Zorro-LAN-IDE         eigener SANA-II-Treiber         noch nicht
                                                         getestet
 
-Außer auf dem echten A3000 und A1200 liefen diese Tests im Emulator
-Amiberry (TAP-Netzwerk). Der Treibercode ist derselbe wie auf echter
-Hardware, aber die Karte ist emuliert; Berichte von echten Karten sind
-willkommen. Die 3C589B wurde mit dncheck und DN: geprüft; ein Tester
-hat außerdem mit dnnodes die Knotenliste geholt und sich mit VAXterm
-an einer VAX angemeldet (nach dntermpatch, Paket DECnet-Term). Auf dem
-A1200 öffnet sie sich nur nach CardReset (Aminet
+Außer auf dem echten A3000, A4000 und A1200 liefen diese Tests im
+Emulator Amiberry (TAP-Netzwerk). Der Treibercode ist derselbe wie auf
+echter Hardware, aber die Karte ist emuliert; Berichte von echten Karten
+sind willkommen. Die 3C589B wurde mit dncheck und DN: geprüft; ein
+Tester hat außerdem mit dnnodes die Knotenliste geholt und sich mit
+VAXterm an einer VAX angemeldet (nach dntermpatch, Paket DECnet-Term).
+Auf dem A1200 öffnet sie sich nur nach CardReset (Aminet
 util/boot/CardReset.lha), auch nach dem Einschalten: Schreiben Sie
 "CardReset" in S:User-Startup vor DECnet-Start.
 

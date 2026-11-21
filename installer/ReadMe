@@ -191,8 +191,11 @@ dncheck tells whether a card's driver can carry DECnet. Tested so far
 (dncheck, DN: and dncopy, 7 MB read and written back unchanged):
 
   Card                  Driver                          Result
-  A2065                 a2065.device 2.16a (Aminet)     works, also on
-                                                        a real A3000
+  Commodore A2065       a2065.device 2.16a (Aminet)     works
+                        a2065.device 2.16 (AmiTCP       works on a real
+                        disk)                           A4000 (68EC030)
+  Ameristar (A2065-     a2065.device 2.16               works on a real
+  compatible)                                           A3000
   Hydra AmigaNet        hydra.device 1.44 (Aminet)      works
   X-Surf                x-surf.device 1.16 (iComp)      works
   X-Surf 100            x-surf-100.device 1.16 (iComp)  works
@@ -209,15 +212,14 @@ dncheck tells whether a card's driver can carry DECnet. Tested so far
                                                         and BNC, 3.2.3)
   Zorro-LAN-IDE         its own SANA-II driver          not tested yet
 
-Except for the real A3000 and A1200, these tests ran in the emulator
-Amiberry (TAP networking). The driver code is the same as on real
-hardware, but the card is emulated; reports from real cards are
+Except for the real A3000, A4000 and A1200, these tests ran in the
+emulator Amiberry (TAP networking). The driver code is the same as on
+real hardware, but the card is emulated; reports from real cards are
 welcome. The 3C589B was checked with dncheck and DN:; a tester also
-fetched the node list with dnnodes and logged in to a VAX with
-VAXterm (after dntermpatch, DECnet-Term package). On the
-A1200 it opens only after CardReset (Aminet util/boot/CardReset.lha),
-even after power-on: put "CardReset" into S:User-Startup before
-DECnet-Start.
+fetched the node list with dnnodes and logged in to a VAX with VAXterm
+(after dntermpatch, DECnet-Term package). On the A1200 it opens only
+after CardReset (Aminet util/boot/CardReset.lha), even after power-on:
+put "CardReset" into S:User-Startup before DECnet-Start.
 
 On BNC (coax) networks 3c589.device 1.5 does not work: it reads the
 card's link-beat bit right after power-on, when it does not yet mean
