@@ -9,6 +9,7 @@
 #include <exec/types.h>
 #include <exec/memory.h>
 #include <dos/dos.h>
+#include <dos/dostags.h>
 #include <devices/timer.h>
 
 #include <proto/exec.h>
@@ -41,8 +42,24 @@ static char epochfile[160];
 static uint32_t saved_epoch;
 static struct sockaddr_in gwaddr;
 static BOOL have_addr, alive;
-static ULONG last_tx, last_rx, last_resolve;   /* ms */
+static ULONG last_tx, last_rx;                  /* ms */
+static ULONG last_resolve;                      /* ms, when the last lookup ended */
 static UBYTE *pkt;                              /* DNGW_MAXPKT */
+
+#define RESOLVE_EVERY_MS 30000UL
+
+/* The gateway's name is looked up in a process of its own: without a
+   network gethostbyname() can block for minutes, and dnetd must go on
+   serving its links (DN: would hang otherwise). */
+struct rsv_msg {
+	struct Message msg;
+	char host[128];
+	ULONG addr;
+	BOOL ok;
+};
+static struct MsgPort *rsv_port;
+static struct rsv_msg rsv;
+static struct Process *rsv_proc;                /* set while a lookup runs */
 
 static ULONG now_ms(void)
 {
@@ -106,28 +123,84 @@ static BOOL save_epoch(uint32_t epoch)
 	return TRUE;
 }
 
-static BOOL resolve(void)
+static void set_addr(ULONG a)
 {
-	struct hostent *he;
-	ULONG a;
-
-	last_resolve = now_ms();
-	a = inet_addr((STRPTR)host);
-	if (a == INADDR_NONE) {
-		he = gethostbyname((STRPTR)host);
-		if (!he || he->h_addrtype != AF_INET || he->h_length != 4) {
-			logfn("dnetd: gateway %s: name not found\n", (STRPTR)host);
-			return FALSE;
-		}
-		memcpy(&a, he->h_addr, 4);
-	}
 	memset(&gwaddr, 0, sizeof gwaddr);
 	gwaddr.sin_len = sizeof gwaddr;
 	gwaddr.sin_family = AF_INET;
 	gwaddr.sin_port = htons(port);
 	gwaddr.sin_addr.s_addr = a;
 	have_addr = TRUE;
-	return TRUE;
+}
+
+/* the lookup process: one message in, the answer back */
+static void rsv_entry(void)
+{
+	struct Process *me = (struct Process *)FindTask(NULL);
+	struct Library *SocketBase;     /* its own opener, not dnetd's */
+	struct rsv_msg *m;
+	struct hostent *he;
+
+	WaitPort(&me->pr_MsgPort);
+	m = (struct rsv_msg *)GetMsg(&me->pr_MsgPort);
+	m->ok = FALSE;
+#ifdef RSV_TESTDELAY
+	Delay(RSV_TESTDELAY * TICKS_PER_SECOND);        /* test: a lookup that hangs */
+#endif
+	if ((SocketBase = OpenLibrary((STRPTR)"bsdsocket.library", 4)) != NULL) {
+		he = gethostbyname((STRPTR)m->host);
+		if (he && he->h_addrtype == AF_INET && he->h_length == 4) {
+			memcpy(&m->addr, he->h_addr, 4);
+			m->ok = TRUE;
+		}
+		CloseLibrary(SocketBase);
+	}
+	Forbid();                       /* gone before dnetd can unload this code */
+	ReplyMsg(&m->msg);
+}
+
+static void resolve_start(void)
+{
+	ULONG a;
+
+	if (rsv_proc)
+		return;
+	a = inet_addr((STRPTR)host);
+	if (a != INADDR_NONE) {
+		set_addr(a);
+		last_resolve = now_ms();
+		return;
+	}
+	strcpy(rsv.host, host);
+	rsv.msg.mn_Node.ln_Type = NT_MESSAGE;
+	rsv.msg.mn_ReplyPort = rsv_port;
+	rsv.msg.mn_Length = sizeof rsv;
+	rsv_proc = CreateNewProcTags(NP_Entry, (ULONG)rsv_entry,
+	                             NP_Name, (ULONG)"dnetd name lookup",
+	                             NP_StackSize, 16384, TAG_END);
+	if (!rsv_proc) {
+		logfn("dnetd: no process for the name lookup\n");
+		last_resolve = now_ms();
+		return;
+	}
+	PutMsg(&rsv_proc->pr_MsgPort, &rsv.msg);
+}
+
+/* a finished lookup: take its address; the next one 30 s after it */
+static void resolve_done(void)
+{
+	if (!rsv_proc || !GetMsg(rsv_port))
+		return;
+	rsv_proc = NULL;
+	last_resolve = now_ms();
+	if (!rsv.ok) {
+		logfn("dnetd: gateway %s: name not found\n", (STRPTR)host);
+		return;
+	}
+	if (!have_addr || gwaddr.sin_addr.s_addr != rsv.addr) {
+		set_addr(rsv.addr);
+		gwt_send(NULL, 0);          /* say hello at the new address now */
+	}
 }
 
 void gwt_send(const UBYTE *frame, ULONG len)
@@ -185,7 +258,8 @@ int gwt_open(const char *linefile, UWORD want, UWORD *area, UWORD *node, gwt_log
 	}
 
 	pkt = AllocVec(DNGW_MAXPKT, MEMF_ANY);
-	if (!pkt)
+	rsv_port = CreateMsgPort();
+	if (!pkt || !rsv_port)
 		return -1;
 	/* at boot the TCP/IP stack may still be starting */
 	for (i = 0; i < 30 && !(SocketBase = OpenLibrary((STRPTR)"bsdsocket.library", 4)); i++)
@@ -207,9 +281,9 @@ int gwt_open(const char *linefile, UWORD want, UWORD *area, UWORD *node, gwt_log
 		return -1;                  /* never repeat counters */
 	logfn("dnetd: tunnel to %s:%lu as %lu.%lu (epoch %lu)\n", (STRPTR)host,
 	     (ULONG)port, (ULONG)a, (ULONG)n, (ULONG)epoch);
-	resolve();                          /* if not now, then later in gwt_tick */
 	last_rx = now_ms();
-	gwt_send(NULL, 0);                  /* keepalive at start */
+	resolve_start();                    /* a name: the keepalive follows its address */
+	gwt_send(NULL, 0);                  /* keepalive at start (if the address is known) */
 	return 0;
 }
 
@@ -233,6 +307,26 @@ BOOL gwt_line_addr(const char *linefile, UWORD *area, UWORD *node)
 
 void gwt_close(void)
 {
+	if (rsv_proc) {
+		BOOL back;
+
+		/* a lookup still runs: ask it to give up (bsdsocket calls
+		   break on Ctrl-C) and wait for it, its code is ours */
+		Forbid();
+		back = GetMsg(rsv_port) != NULL;
+		if (!back)
+			Signal(&rsv_proc->pr_Task, SIGBREAKF_CTRL_C);
+		Permit();
+		if (!back) {
+			logfn("dnetd: waiting for the name lookup to end\n");
+			while (!GetMsg(rsv_port))
+				WaitPort(rsv_port);
+		}
+		rsv_proc = NULL;
+	}
+	if (rsv_port)
+		DeleteMsgPort(rsv_port);
+	rsv_port = NULL;
 	if (sock >= 0)
 		CloseSocket(sock);
 	sock = -1;
@@ -286,10 +380,12 @@ void gwt_tick(void)
 		alive = FALSE;
 	}
 	/* no address yet (DNS not up at boot), or the gateway lost: a home
-	   line's address may have changed */
-	if (t - last_resolve >= 30000UL &&
+	   line's address may have changed. Keepalives go on to the old
+	   address meanwhile, so the tunnel is back as soon as the net is. */
+	resolve_done();
+	if (!rsv_proc && t - last_resolve >= RESOLVE_EVERY_MS &&
 	    (!have_addr || (!alive && t - last_rx > DNGW_LOST_S * 1000UL)))
-		resolve();
+		resolve_start();
 }
 
 const char *gwt_host(void)

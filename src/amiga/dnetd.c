@@ -70,7 +70,7 @@
 #define BUFLEN  1518
 #define TICK_US 100000
 
-static const char version[] = "$VER: dnetd 0.9 (22.11.2026)";
+static const char version[] = "$VER: dnetd 0.10 (22.11.2026)";
 
 struct Device *TimerBase;
 

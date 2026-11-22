@@ -37,7 +37,9 @@ BOOL gwt_wait(ULONG *sigs);
 BOOL gwt_recv(UBYTE **frame, ULONG *len);
 
 /* every timer tick: keepalive after 15 s without sending, the gateway
-   lost after 50 s without a packet, then its name resolved every 30 s */
+   lost after 50 s without a packet, then its name looked up again 30 s
+   after the last lookup ended. Lookups run in a process of their own,
+   so dnetd never waits for DNS. */
 void gwt_tick(void);
 
 const char *gwt_host(void);

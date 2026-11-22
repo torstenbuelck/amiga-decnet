@@ -323,10 +323,13 @@ Version history
 ---------------
 0.5 (22.11.2026)
   - DECnet through a DECnet gateway over TCP/IP (decnet-gateway by
-    Hans Hübner, e.g. at RetroStar): dnetd 0.9 TRANSPORT=UDP, the
+    Hans Hübner, e.g. at RetroStar): dnetd 0.10 TRANSPORT=UDP, the
     installer asks "network card or gateway", takes the client line,
     and puts DECnet after the TCP/IP software; see "Through a DECnet
     gateway"
+  - dnetd 0.10 looks the gateway's name up in a process of its own:
+    when the network goes away, DN: reports an error instead of
+    hanging, and the tunnel comes back by itself
   - DECnet-Start waits until dnetd runs or has given up (dnetd CHECK
     WAIT), instead of a fixed 5 seconds
   - dnstartup 0.4: AFTERNET puts the block after the network software
