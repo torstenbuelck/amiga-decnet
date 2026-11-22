@@ -332,6 +332,11 @@ bis zu 30 Sekunden auf den TCP/IP-Stack. Von Hand:
 
   DECnet-Start TRANSPORT=UDP
 
+Steht die Verbindung beim Booten noch nicht (etwa ein WLAN, das Sie
+von Hand starten), braucht DECnet keinen Neustart: dnetd versucht es
+alle 30 Sekunden wieder und ist kurz nach dem Verbindungsaufbau
+erreichbar. Ein Zugriff auf DN: vorher schlägt nur fehl.
+
 Jeder Start zählt eine Nummer hoch, die das Gateway prüft (damit
 niemand alte Pakete wiederholen kann); dnetd hält sie in
 ENVARC:DECnet/GatewayEpoch fest und startet nicht, wenn es sie dort
