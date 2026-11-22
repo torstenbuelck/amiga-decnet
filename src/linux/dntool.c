@@ -2,7 +2,7 @@
  * dntool.c - DAP client test tool on the portable core (Linux).
  *
  * Usage: dntool [-a area.node] [-i iface] [-v] [-u user] [-p password] [-n]
- *               [-t termtype]
+ *               [-t termtype] [-r router]
  *               dir NODE SPEC
  *               get NODE SPEC [LOCALFILE]
  *               put NODE LOCALFILE [SPEC]
@@ -20,6 +20,7 @@
  *   task connects to the named object (on VMS: runs NAME.COM in the login
  *   directory) and prints every message until the other end disconnects
  *   -n  do not offer DAP blocking (needed for FOTOFX)
+ *   -r  router (area.node) to use while no router hello is heard
  *   put writes LOCALFILE as binary records (default SPEC: its base name)
  *   nodes lists the node database of NODE through NML (object 19)
  *
@@ -664,7 +665,7 @@ static double now(void)
 
 static void usage(const char *prog)
 {
-	fprintf(stderr, "usage: %s [-a area.node] [-i iface] [-v] [-u user] [-p password] [-n] [-t termtype]\n"
+	fprintf(stderr, "usage: %s [-a area.node] [-i iface] [-v] [-u user] [-p password] [-n] [-t termtype] [-r router]\n"
 	        "          dir NODE SPEC | get NODE SPEC [LOCALFILE] | nodes NODE [permanent]\n"
 	        "          put NODE LOCALFILE [SPEC] | task NODE NAME | login NODE | serve\n"
 	        "          lat [SERVICE] | latserve [SERVICE]\n", prog);
@@ -674,14 +675,14 @@ static void usage(const char *prog)
 int main(int argc, char **argv)
 {
 	const char *ifname = NULL, *user = NULL, *pass = NULL, *termtype = NULL, *cmd, *spec;
-	dn_u16 addr = (23 << 10) | 269, node;
+	dn_u16 addr = (23 << 10) | 269, node, router;
 	int c, verbose = 0, blocking = 1, reason, rc = 1;
 	struct dn_connreq req;
 	struct dns *s;
 	struct dap *d;
 	double t0;
 
-	while ((c = getopt(argc, argv, "a:i:vu:p:nt:")) != -1) {
+	while ((c = getopt(argc, argv, "a:i:vu:p:nt:r:")) != -1) {
 		switch (c) {
 		case 'a': if (dn_aton(optarg, &addr)) usage(argv[0]); break;
 		case 'i': ifname = optarg; break;
@@ -690,6 +691,7 @@ int main(int argc, char **argv)
 		case 'p': pass = optarg; break;
 		case 'n': blocking = 0; break;
 		case 't': termtype = optarg; break;
+		case 'r': if (dn_aton(optarg, &router)) usage(argv[0]); dnenv_set_router(router); break;
 		default: usage(argv[0]);
 		}
 	}

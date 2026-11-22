@@ -60,7 +60,7 @@
 #define DN_ETHERTYPE 0x6003
 #define FRAMELEN     1518
 
-static const char version[] = "$VER: dncheck 0.6 (04.11.2026)";
+static const char version[] = "$VER: dncheck 0.7 (22.11.2026)";
 
 static const UBYTE all_endnodes[6] = { 0xab, 0x00, 0x00, 0x04, 0x00, 0x00 };
 
@@ -376,7 +376,8 @@ int main(void)
 			Printf("read FAILED (error %ld/%ld)\n", (LONG)read_err, read_werr);
 		} else {
 			Printf("nothing\n");
-			Printf("   No DECnet router on this LAN, or the frames are not delivered.\n");
+			Printf("   No DECnet router on this LAN, or the frames are not delivered.\n"
+			       "   Many WLANs drop DECnet multicast: see \"WLAN\" in the ReadMe.\n");
 			if (read_stuck)
 				Printf("   The driver did not give back the aborted read request\n"
 				       "   (no AbortIO support); dncheck leaves it with the driver.\n");
@@ -410,7 +411,9 @@ int main(void)
 		rc = 5;
 	} else {
 		Printf("the driver takes the address, but no DECnet traffic was seen.\n"
-		       "        Check the cable and that a DECnet router is on the LAN.\n");
+		       "        Check the cable and that a DECnet router is on the LAN.\n"
+		       "        In a WLAN this is common: DECnet works there with the\n"
+		       "        router set by hand (ROUTER, see \"WLAN\" in the ReadMe).\n");
 		rc = 5;
 	}
 	if (taken)

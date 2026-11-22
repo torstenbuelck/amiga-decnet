@@ -1,4 +1,4 @@
-; $VER: Install-DECnet 0.3 (16.11.2026)
+; $VER: Install-DECnet 0.4 (22.11.2026)
 ;
 ; Installer script for the Amiga DECnet Phase IV endnode stack.
 ; Needs the Commodore Installer (V43 recommended) and AmigaOS 2.04.
@@ -16,7 +16,7 @@
 ; Copyright (C) 2026  Torsten Bülck (tuti)
 ; SPDX-License-Identifier: GPL-2.0-or-later
 
-(set #version "0.3")
+(set #version "0.4")
 (set @app-name "DECnet")
 (set @default-dest "SYS:")
 
@@ -89,6 +89,21 @@
 	(set #t-rc20-3 ".\n\nInstall anyway?")
 	(set #t-rc20-help (cat "The driver or the unit does not exist, or it is in use "
 	                       "exclusively by other software."))
+	(set #t-router (cat "Address (area.node) of your DECnet router?\n\n"
+	                   "Only needed where the router's announcements do not arrive, as "
+	                   "in many WLANs: DECnet then uses this router until it hears one "
+	                   "itself. Otherwise leave it empty."))
+	(set #t-router-help (cat "DECnet routers announce themselves by multicast. Many WLANs "
+	                         "(e.g. FRITZ!Box) and WLAN bridges drop it. Without a router, "
+	                         "this Amiga still reaches the nodes on its own network, but not "
+	                         "those in other areas or behind the router.\n\n"
+	                         "A router heard on the network always takes precedence over "
+	                         "this entry. Ask whoever runs your DECnet for the address, or "
+	                         "look at another DECnet node on a cable: on an Amiga, "
+	                         "T:dnetd.log names the \"designated router\".\n\n"
+	                         "Change it later in DECnet:S/DECnet-Start (line .def ROUTER).\n\n"))
+	(set #t-router-bad (cat "\" is not a DECnet address.\n\n"
+	                        "Use area.node (area 1-63, node 1-1023), or leave it empty."))
 
 	(set #t-where "Where should the drawer \"DECnet\" be created?")
 	(set #t-update-1 "DECnet is already installed in \"")
@@ -258,6 +273,22 @@
 	(set #t-rc20-3 " nicht öffnen.\n\nTrotzdem installieren?")
 	(set #t-rc20-help (cat "Den Treiber oder die Unit gibt es nicht, oder andere Software "
 	                       "belegt sie exklusiv."))
+	(set #t-router (cat "Adresse (Bereich.Knoten) Ihres DECnet-Routers?\n\n"
+	                   "Nur nötig, wo die Ankündigungen des Routers nicht ankommen, wie "
+	                   "in vielen WLANs: DECnet benutzt dann diesen Router, bis es selbst "
+	                   "einen hört. Sonst leer lassen."))
+	(set #t-router-help (cat "DECnet-Router kündigen sich per Multicast an. Viele WLANs "
+	                         "(z. B. FRITZ!Box) und WLAN-Brücken verwerfen das. Ohne Router "
+	                         "erreicht dieser Amiga die Knoten im eigenen Netz, aber nicht "
+	                         "die in anderen Bereichen oder hinter dem Router.\n\n"
+	                         "Ein im Netz gehörter Router hat immer Vorrang vor diesem "
+	                         "Eintrag. Die Adresse kennt, wer Ihr DECnet betreibt, oder ein "
+	                         "anderer DECnet-Knoten am Kabel: Auf einem Amiga nennt "
+	                         "T:dnetd.log den \"designated router\".\n\n"
+	                         "Später ändern: in DECnet:S/DECnet-Start (Zeile .def ROUTER).\n\n"))
+	(set #t-router-bad (cat "\" ist keine DECnet-Adresse.\n\n"
+	                        "Verwenden Sie Bereich.Knoten (Bereich 1-63, Knoten 1-1023) "
+	                        "oder lassen Sie das Feld leer."))
 
 	(set #t-where "Wo soll die Schublade \"DECnet\" angelegt werden?")
 	(set #t-update-1 "DECnet ist schon in \"")
@@ -493,6 +524,31 @@
 	)
 )
 
+; router by hand (#router): empty or area.node, asked until valid
+(procedure P_ASKROUTER
+	(set #router-ok 0)
+	(while (NOT #router-ok)
+		(set #router (askstring
+			(prompt #t-router)
+			(help #t-router-help @askstring-help)
+			(default #router)
+		))
+		(set #router-ok 1)
+		(if (<> #router "")
+			(
+			(set #keep #addr)
+			(set #addr #router)
+			(P_CHECKADDR)
+			(set #router-ok #addr-ok)
+			(set #addr #keep)
+			)
+		)
+		(if (NOT #router-ok)
+			(message "\"" #router #t-router-bad)
+		)
+	)
+)
+
 ; ---------------------------------------------------------------- install
 
 (procedure P_DEVICE
@@ -572,10 +628,12 @@
 	; address on the network.
 	(set #addr "")
 	(set #name "")
+	(set #router "")
 	(if #update
 		(
 		(set #addr (getenv "DECnet/Address"))
 		(set #name (getenv "DECnet/Name"))
+		(set #router (getenv "DECnet/Router"))
 		)
 	)
 	(set #device (getenv "DECnet/Device"))
@@ -611,6 +669,13 @@
 
 	; ---- card
 	(P_DEVICE)
+
+	; ---- router by hand: asked only when dncheck saw no DECnet traffic
+	; (rc 5: e.g. a WLAN that drops multicast), when one was set before, or
+	; at expert level. Empty = none.
+	(if (OR (= #rc 5) (<> #router "") (= @user-level 2))
+		(P_ASKROUTER)
+	)
 
 	; ---- files
 	(makedir #target (prompt #t-mkdir #target) (help @makedir-help))
@@ -656,8 +721,9 @@
 		(prompt #t-wr-start)
 		(help @textfile-help)
 		(dest (tackon #target "S/DECnet-Start"))
-		(append ".key ADDR/K,UNIT/K,DEVICE/K\n.bra {\n.ket }\n"
-		        ".def ADDR " #addr "\n.def UNIT " #unit "\n.def DEVICE \"" #device "\"\n")
+		(append ".key ADDR/K,UNIT/K,DEVICE/K,ROUTER/K\n.bra {\n.ket }\n"
+		        ".def ADDR " #addr "\n.def UNIT " #unit "\n.def DEVICE \"" #device "\"\n"
+		        ".def ROUTER \"" #router "\"\n")
 		(include "S/DECnet-Start.body")
 	)
 	; the script bit lets the Shell run them by name (DECnet-Stop), without
@@ -720,6 +786,7 @@
 	(set #var "Unit") (set #val #unit) (P_SAVEVAR)
 	(set #var "Address") (set #val #addr) (P_SAVEVAR)
 	(set #var "Name") (set #val #name) (P_SAVEVAR)
+	(set #var "Router") (set #val #router) (P_SAVEVAR)
 
 	; ---- start at boot
 	(if (askbool
@@ -765,7 +832,7 @@
 			(if (= #rc 0) (set #from (askstring
 				(prompt #t-from)
 				(help #t-from-help @askstring-help)
-				(default "")
+				(default #router)
 			)))
 			(if (<> #from "")
 				(

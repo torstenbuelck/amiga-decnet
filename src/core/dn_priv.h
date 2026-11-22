@@ -33,6 +33,8 @@ struct dn_core {
 	dn_u8  router_prio;
 	dn_u32 router_seen;
 	dn_u32 router_timeout;      /* ms */
+	dn_u16 router_static;       /* set by hand (dn_set_router), 0 = none */
+	int    router_is_static;    /* router came from router_static, not a hello */
 
 	struct dn_cache_entry cache[DN_CACHESIZE];
 	struct dn_object *objects[DN_MAXOBJECTS];

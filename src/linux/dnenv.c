@@ -6,6 +6,9 @@
  * ETH_P_ALL is used because a protocol-specific socket sees nothing on a
  * bridge port (eth0 in br0): the bridge takes the frames first.
  *
+ * Test aid: with DN_NOMULTICAST=1 in the environment, multicast frames are
+ * dropped on input, as many WLANs (FRITZ!Box) do for non-IP multicast.
+ *
  * Copyright (C) 2026  Torsten Bülck (tuti)
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
@@ -33,6 +36,8 @@ static unsigned long last_tick;
 static void (*other_input)(const unsigned char *src, const unsigned char *dst,
                            const unsigned char *payload, unsigned len);
 static unsigned other_type;
+static dn_u16 static_router;
+static int no_multicast;
 
 static void on_signal(int sig)
 {
@@ -117,6 +122,11 @@ static unsigned long now_ms(void)
 	return (unsigned long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 
+void dnenv_set_router(dn_u16 addr)
+{
+	static_router = addr;
+}
+
 int dn_aton(const char *s, dn_u16 *out)
 {
 	unsigned a, n;
@@ -168,7 +178,12 @@ int dnenv_open(const char *ifname, dn_u16 addr, int verbose)
 	env.log = logmsg;
 	env.loglevel = verbose > 1 ? DN_LOG_DEBUG : verbose ? DN_LOG_INFO : DN_LOG_ERR;
 	dn_init(&env, addr);
+	if (static_router)
+		dn_set_router(static_router);
 	dn_seed_links((dn_u16)(time(NULL) ^ (getpid() << 4)));
+	no_multicast = getenv("DN_NOMULTICAST") && *getenv("DN_NOMULTICAST") == '1';
+	if (no_multicast)
+		fprintf(stderr, "DN_NOMULTICAST: dropping multicast frames (test)\n");
 
 	signal(SIGINT, on_signal);
 	signal(SIGTERM, on_signal);
@@ -194,6 +209,10 @@ void dnenv_pump(int timeout_ms)
 		ssize_t n;
 
 		while ((n = recvfrom(sock, f, sizeof f, MSG_DONTWAIT, (struct sockaddr *)&from, &fl)) > 0) {
+			if (no_multicast && n > 14 && (f[0] & 1) && memcmp(f, "\xff\xff\xff\xff\xff\xff", 6)) {
+				fl = sizeof from;
+				continue;
+			}
 			if (n > 14 && from.sll_pkttype != PACKET_OUTGOING &&
 			    f[12] == (DN_ETHERTYPE >> 8) && f[13] == (DN_ETHERTYPE & 0xff) &&
 			    memcmp(f + 6, mymac, 6) != 0 &&

@@ -3,11 +3,14 @@
  * SANA-II device.
  *
  * Usage: dnetd ADDR=area.node [DEVICE=uaenet.device] [UNIT=n] [VERBOSE]
- *              [LOG=file]
+ *              [LOG=file] [ROUTER=area.node]
  *        dnetd CHECK
  *        dnetd STOP
  *   LOG appends each message to file, opened only for that line, so the
  *   log can be read while dnetd runs.
+ *   ROUTER is the router to use while no router hello is heard, for
+ *   networks that do not deliver DECnet multicast (many WLANs). A router
+ *   heard on the network always wins. Empty = none.
  *   CHECK: return code 0 if a dnetd runs, 5 (WARN) if not.
  *   STOP: ends the running dnetd (as Ctrl-C), however it was started,
  *   and waits until it is gone; 5 (WARN) if none runs.
@@ -51,7 +54,7 @@
 #define BUFLEN  1518
 #define TICK_US 100000
 
-static const char version[] = "$VER: dnetd 0.8 (25.10.2026)";
+static const char version[] = "$VER: dnetd 0.9 (22.11.2026)";
 
 struct Device *TimerBase;
 
@@ -432,11 +435,11 @@ static int stop_dnetd(void)
 
 int main(void)
 {
-	static const char template[] = "ADDR,DEVICE/K,UNIT/K/N,VERBOSE/S,LOG/K,CHECK/S,STOP/S";
-	LONG args[7] = { 0, 0, 0, 0, 0, 0, 0 };
+	static const char template[] = "ADDR,DEVICE/K,UNIT/K/N,VERBOSE/S,LOG/K,CHECK/S,STOP/S,ROUTER/K";
+	LONG args[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
 	struct RDArgs *rda;
 	LONG unit = 0;
-	dn_u16 addr;
+	dn_u16 addr, router = 0;
 	struct dn_env env;
 	struct timeval last, now;
 	ULONG srvsig;
@@ -470,7 +473,14 @@ int main(void)
 			Close(fh);
 	}
 	if (!parse_addr((const char *)args[0], &addr)) {
-		out("dnetd: bad ADDR, use area.node (e.g. 23.202)\n");
+		out("dnetd: bad ADDR, use area.node (e.g. 1.10)\n");
+		FreeArgs(rda);
+		return RETURN_FAIL;
+	}
+	/* ROUTER="" (DECnet-Start without a router) means none */
+	if (args[7] && *(const char *)args[7] &&
+	    !parse_addr((const char *)args[7], &router)) {
+		out("dnetd: bad ROUTER, use area.node (e.g. 1.1) or leave it empty\n");
 		FreeArgs(rda);
 		return RETURN_FAIL;
 	}
@@ -536,6 +546,8 @@ int main(void)
 	env.log = env_log;
 	env.loglevel = args[3] ? DN_LOG_DEBUG : DN_LOG_INFO;
 	dn_init(&env, addr);
+	if (router)
+		dn_set_router(router);
 	dn_seed_links((dn_u16)(last.tv_secs ^ (last.tv_micro >> 4)));
 	dn_mirror_init();
 	srvsig = srv_init();

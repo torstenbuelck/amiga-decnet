@@ -17,6 +17,8 @@ void dnenv_pump(int timeout_ms);    /* one round of the event loop */
 void dnenv_close(void);
 int  dnenv_stopped(void);           /* SIGINT/SIGTERM seen */
 int  dn_aton(const char *s, dn_u16 *out);   /* "23.208" -> address */
+/* router to use while no router hello is heard; call before dnenv_open */
+void dnenv_set_router(dn_u16 addr);
 /* frames of another ethertype (LAT) to input; sending them; our MAC */
 void dnenv_other(unsigned type, void (*input)(const unsigned char *src,
                  const unsigned char *dst, const unsigned char *payload, unsigned len));

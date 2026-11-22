@@ -1,9 +1,11 @@
 ; DECnet-Start - set up DECnet and start dnetd (AmigaOS 2.04+)
 ; Usage: Execute DECnet:S/DECnet-Start [ADDR=area.node] [UNIT=n] [DEVICE=name]
-; The defaults above were written by the installer. S:User-Startup runs
-; this script; it must run before AmiTCP or any other network software,
-; because only the first program that configures the card sets its
-; station address. dnetd log: T:dnetd.log
+;                                       [ROUTER=area.node]
+; The defaults above were written by the installer. ROUTER is used only
+; while no router is heard (WLANs that drop DECnet multicast); empty =
+; none. S:User-Startup runs this script; it must run before AmiTCP or
+; any other network software, because only the first program that
+; configures the card sets its station address. dnetd log: T:dnetd.log
 
 ; the commands, in the path of the Shell running this script (the path
 ; belongs to that Shell, so check every time; at boot Workbench inherits it)
@@ -28,7 +30,7 @@ EndIf
 dnetd >NIL: CHECK
 If WARN
   ; started by its bare name, found through the path
-  Run >NIL: dnetd ADDR={ADDR} UNIT={UNIT} DEVICE={DEVICE} LOG=T:dnetd.log
+  Run >NIL: dnetd ADDR={ADDR} UNIT={UNIT} DEVICE={DEVICE} ROUTER="{ROUTER}" LOG=T:dnetd.log
   ; give it time to open the device, then ask whether it runs (Run
   ; >NIL: hides every error, e.g. a wrong device or unit)
   ; (each If tests the command right before it: EndIf resets the RC)

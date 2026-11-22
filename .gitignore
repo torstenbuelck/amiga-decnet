@@ -14,6 +14,7 @@
 /src/linux/dnhost
 /src/linux/dntool
 /src/linux/nsptest
+/src/linux/routetest
 /dnhello/dnhello
 /s2dump/s2dump
 /dist/

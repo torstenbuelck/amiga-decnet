@@ -121,6 +121,10 @@ unsigned dn_pending(struct dn_link *l);   /* unacknowledged segments */
 void dn_node_mac(dn_u8 *mac, dn_u16 addr);
 const char *dn_ntoa(dn_u16 addr);   /* static buffer */
 dn_u16 dn_designated_router(void);
+/* Router to use while no router hello is heard (WLANs that drop
+   multicast); 0 = none. A router hello always wins. Call after dn_init. */
+void dn_set_router(dn_u16 addr);
+int dn_router_is_static(void);
 extern const dn_u8 dn_all_routers[6];
 extern const dn_u8 dn_all_endnodes[6];
 

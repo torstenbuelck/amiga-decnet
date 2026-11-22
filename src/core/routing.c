@@ -61,6 +61,32 @@ dn_u16 dn_designated_router(void)
 	return dn_g.router;
 }
 
+int dn_router_is_static(void)
+{
+	return dn_g.router && dn_g.router_is_static;
+}
+
+/* The static router stands in only while no router hello is heard: a hello
+   replaces it at once (router_hello), and when the heard router is lost,
+   dn_route_tick falls back to it. */
+static void use_static_router(void)
+{
+	dn_g.router = dn_g.router_static;
+	dn_g.router_is_static = dn_g.router != 0;
+	dn_g.router_prio = 0;
+	if (dn_g.router)
+		DN_LOG(DN_LOG_INFO, (DN_LOG_INFO, "router %s (set by hand, until a router hello is heard)",
+		       dn_ntoa(dn_g.router)));
+	dn_g.nexthello = dn_g.now;              /* announce it at once */
+}
+
+void dn_set_router(dn_u16 addr)
+{
+	dn_g.router_static = addr;
+	if (!dn_g.router || dn_g.router_is_static)
+		use_static_router();
+}
+
 int dn_init(const struct dn_env *env, dn_u16 address)
 {
 	memset(&dn_g, 0, sizeof dn_g);
@@ -155,14 +181,17 @@ static void router_hello(const dn_u8 *m, unsigned len)
 	if (!timer)
 		timer = 15;
 
-	/* designated router: highest priority, then highest address */
-	if (dn_g.router == 0 || id == dn_g.router || prio > dn_g.router_prio ||
-	    (prio == dn_g.router_prio && id > dn_g.router)) {
-		if (id != dn_g.router) {
+	/* designated router: highest priority, then highest address; a router
+	   set by hand gives way to any router heard */
+	if (dn_g.router == 0 || dn_g.router_is_static || id == dn_g.router ||
+	    prio > dn_g.router_prio || (prio == dn_g.router_prio && id > dn_g.router)) {
+		if (id != dn_g.router || dn_g.router_is_static) {
 			DN_LOG(DN_LOG_INFO, (DN_LOG_INFO, "designated router %s (prio %u, hello %u s)",
 			       dn_ntoa(id), prio, timer));
+			if (id != dn_g.router)
+				dn_g.nexthello = dn_g.now; /* announce it at once */
 			dn_g.router = id;
-			dn_g.nexthello = dn_g.now;     /* announce it at once */
+			dn_g.router_is_static = 0;
 		}
 		dn_g.router_prio = prio;
 		dn_g.router_seen = dn_g.now;
@@ -172,10 +201,11 @@ static void router_hello(const dn_u8 *m, unsigned len)
 
 void dn_route_tick(void)
 {
-	if (dn_g.router && dn_g.now - dn_g.router_seen > dn_g.router_timeout) {
+	if (dn_g.router && !dn_g.router_is_static &&
+	    dn_g.now - dn_g.router_seen > dn_g.router_timeout) {
 		DN_LOG(DN_LOG_INFO, (DN_LOG_INFO, "router %s lost", dn_ntoa(dn_g.router)));
 		dn_g.router = 0;
-		dn_g.nexthello = dn_g.now;
+		use_static_router();
 	}
 	if ((long)(dn_g.now - dn_g.nexthello) >= 0) {
 		send_hello();

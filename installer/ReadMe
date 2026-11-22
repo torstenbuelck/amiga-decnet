@@ -247,8 +247,42 @@ DEVS:Networks/cnet.device (or cnet16.device), keep the old file, and
 see the ReadMe in cnetfix.lha. For the DE-660+ take cnet.device.
 
 
+WLAN
+----
+DECnet routers announce themselves by multicast, and so do LAT
+services. Many WLANs (e.g. a FRITZ!Box) do not pass multicast that is
+not IP. An Amiga in such a WLAN still reaches the DECnet nodes on its
+own network, but it knows no router, so nodes in other areas or behind
+the router cannot be reached. dncheck then sees no DECnet traffic.
+
+The fix is to name the router by hand. The installer asks for it when
+dncheck saw no DECnet traffic (or when one was set before); the answer
+goes into DECnet:S/DECnet-Start as the line
+
+  .def ROUTER "area.node"
+
+Empty quotes mean no router. To try one without changing the script:
+
+  DECnet-Stop
+  DECnet-Start ROUTER=area.node
+
+A router heard on the network always takes precedence; the one given
+here is used only while none is heard. Ask whoever runs your DECnet for
+the address, or look at another DECnet node on a cable: on an Amiga,
+T:dnetd.log names the "designated router".
+
+The WLAN must be part of the same network as the DECnet router:
+repeaters and WLAN bridges that pass only IP do not carry DECnet at all.
+
 Version history
 ---------------
+0.4 (22.11.2026)
+  - dnetd 0.9: ROUTER=area.node, the router to use while none is heard
+    (WLANs that drop DECnet multicast); see "WLAN"
+  - Installer: asks for that router when dncheck saw no DECnet traffic,
+    writes it into DECnet-Start (.def ROUTER) and keeps it for updates
+  - dncheck 0.7: points to "WLAN" when no DECnet traffic arrives
+
 0.3 (16.11.2026)
   - Installer and texts in German on a German AmigaOS 3.x (else
     English); LiesMich is this text in German

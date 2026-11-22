@@ -274,8 +274,46 @@ cnet16.device), heben Sie die alte Datei auf und lesen Sie die
 Anleitung in cnetfix.lha. Für die DE-660+ nehmen Sie cnet.device.
 
 
+WLAN
+----
+DECnet-Router kündigen sich per Multicast an, LAT-Dienste ebenso.
+Viele WLANs (z. B. eine FRITZ!Box) reichen Multicast, der kein IP ist,
+nicht weiter. Ein Amiga in so einem WLAN erreicht die DECnet-Knoten im
+eigenen Netz, kennt aber keinen Router; Knoten in anderen Bereichen
+oder hinter dem Router erreicht er nicht. dncheck sieht dann keinen
+DECnet-Verkehr.
+
+Abhilfe: den Router von Hand eintragen. Die Installation fragt danach,
+wenn dncheck keinen DECnet-Verkehr gesehen hat (oder schon einer
+eingetragen war); die Antwort steht in DECnet:S/DECnet-Start als Zeile
+
+  .def ROUTER "Bereich.Knoten"
+
+Leere Anführungszeichen heißen: kein Router. Einen Router ausprobieren,
+ohne das Skript zu ändern:
+
+  DECnet-Stop
+  DECnet-Start ROUTER=Bereich.Knoten
+
+Ein im Netz gehörter Router hat immer Vorrang; der eingetragene gilt
+nur, solange keiner zu hören ist. Die Adresse kennt, wer Ihr DECnet
+betreibt, oder ein anderer DECnet-Knoten am Kabel: Auf einem Amiga
+nennt T:dnetd.log den "designated router".
+
+Das WLAN muss zum selben Netz gehören wie der DECnet-Router: Repeater
+und WLAN-Brücken, die nur IP durchreichen, tragen gar kein DECnet.
+
 Versionsgeschichte
 ------------------
+0.4 (22.11.2026)
+  - dnetd 0.9: ROUTER=Bereich.Knoten, der Router, den es benutzt,
+    solange es keinen hört (WLANs, die DECnet-Multicast verwerfen);
+    siehe "WLAN"
+  - Installation: fragt nach diesem Router, wenn dncheck keinen
+    DECnet-Verkehr gesehen hat, schreibt ihn in DECnet-Start (.def
+    ROUTER) und behält ihn für Updates
+  - dncheck 0.7: verweist auf "WLAN", wenn kein DECnet-Verkehr ankommt
+
 0.3 (16.11.2026)
   - Installation und Texte auf Deutsch auf einem deutschen AmigaOS 3.x
     (sonst Englisch); LiesMich ist dieser Text auf Deutsch

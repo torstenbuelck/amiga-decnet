@@ -2,7 +2,7 @@
  * dnhost.c - run the portable DECnet core on Linux as a node offering the
  * built-in objects (MIRROR). Needs root / CAP_NET_RAW.
  *
- * Usage: dnhost [-i iface] [-a area.node] [-v]
+ * Usage: dnhost [-i iface] [-a area.node] [-r router] [-v]
  *   default: -i br0 (falls back to eth0) -a 23.269
  *
  * Copyright (C) 2026  Torsten Bülck (tuti)
@@ -16,10 +16,10 @@
 int main(int argc, char **argv)
 {
 	const char *ifname = NULL;
-	dn_u16 addr = (23 << 10) | 269;
+	dn_u16 addr = (23 << 10) | 269, router;
 	int c, verbose = 1;
 
-	while ((c = getopt(argc, argv, "i:a:v")) != -1) {
+	while ((c = getopt(argc, argv, "i:a:r:v")) != -1) {
 		switch (c) {
 		case 'i': ifname = optarg; break;
 		case 'a':
@@ -28,9 +28,16 @@ int main(int argc, char **argv)
 				return 1;
 			}
 			break;
+		case 'r':
+			if (dn_aton(optarg, &router)) {
+				fprintf(stderr, "bad router %s\n", optarg);
+				return 1;
+			}
+			dnenv_set_router(router);
+			break;
 		case 'v': verbose++; break;
 		default:
-			fprintf(stderr, "usage: %s [-i iface] [-a area.node] [-v]\n", argv[0]);
+			fprintf(stderr, "usage: %s [-i iface] [-a area.node] [-r router] [-v]\n", argv[0]);
 			return 1;
 		}
 	}
