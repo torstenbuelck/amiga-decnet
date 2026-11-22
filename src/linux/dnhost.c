@@ -2,7 +2,7 @@
  * dnhost.c - run the portable DECnet core on Linux as a node offering the
  * built-in objects (MIRROR). Needs root / CAP_NET_RAW.
  *
- * Usage: dnhost [-i iface] [-a area.node] [-r router] [-v]
+ * Usage: dnhost [-i iface] [-a area.node] [-r router] [-v] [-G linefile [-S statefile]]
  *   default: -i br0 (falls back to eth0) -a 23.269
  *
  * Copyright (C) 2026  Torsten Bülck (tuti)
@@ -15,11 +15,11 @@
 
 int main(int argc, char **argv)
 {
-	const char *ifname = NULL;
+	const char *ifname = NULL, *gwline = NULL, *gwstate = NULL;
 	dn_u16 addr = (23 << 10) | 269, router;
 	int c, verbose = 1;
 
-	while ((c = getopt(argc, argv, "i:a:r:v")) != -1) {
+	while ((c = getopt(argc, argv, "i:a:r:vG:S:")) != -1) {
 		switch (c) {
 		case 'i': ifname = optarg; break;
 		case 'a':
@@ -36,12 +36,16 @@ int main(int argc, char **argv)
 			dnenv_set_router(router);
 			break;
 		case 'v': verbose++; break;
+		case 'G': gwline = optarg; break;
+		case 'S': gwstate = optarg; break;
 		default:
-			fprintf(stderr, "usage: %s [-i iface] [-a area.node] [-r router] [-v]\n", argv[0]);
+			fprintf(stderr, "usage: %s [-i iface] [-a area.node] [-r router] [-v] [-G linefile [-S statefile]]\n", argv[0]);
 			return 1;
 		}
 	}
 	setvbuf(stderr, NULL, _IOLBF, 0);
+	if (gwline && dnenv_set_gateway(gwline, gwstate, &addr))
+		return 1;
 	if (dnenv_open(ifname, addr, verbose))
 		return 1;
 	dn_mirror_init();

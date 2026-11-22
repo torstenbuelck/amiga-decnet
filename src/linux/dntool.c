@@ -2,7 +2,7 @@
  * dntool.c - DAP client test tool on the portable core (Linux).
  *
  * Usage: dntool [-a area.node] [-i iface] [-v] [-u user] [-p password] [-n]
- *               [-t termtype] [-r router]
+ *               [-t termtype] [-r router] [-G linefile [-S statefile]]
  *               dir NODE SPEC
  *               get NODE SPEC [LOCALFILE]
  *               put NODE LOCALFILE [SPEC]
@@ -21,6 +21,8 @@
  *   directory) and prints every message until the other end disconnects
  *   -n  do not offer DAP blocking (needed for FOTOFX)
  *   -r  router (area.node) to use while no router hello is heard
+ *   -G  through the decnet-gateway tunnel of this DNGW1 client line (the
+ *       node then has the line's address); -S keeps the counter epoch
  *   put writes LOCALFILE as binary records (default SPEC: its base name)
  *   nodes lists the node database of NODE through NML (object 19)
  *
@@ -666,6 +668,7 @@ static double now(void)
 static void usage(const char *prog)
 {
 	fprintf(stderr, "usage: %s [-a area.node] [-i iface] [-v] [-u user] [-p password] [-n] [-t termtype] [-r router]\n"
+	        "          [-G linefile [-S statefile]]\n"
 	        "          dir NODE SPEC | get NODE SPEC [LOCALFILE] | nodes NODE [permanent]\n"
 	        "          put NODE LOCALFILE [SPEC] | task NODE NAME | login NODE | serve\n"
 	        "          lat [SERVICE] | latserve [SERVICE]\n", prog);
@@ -674,6 +677,7 @@ static void usage(const char *prog)
 
 int main(int argc, char **argv)
 {
+	const char *gwline = NULL, *gwstate = NULL;
 	const char *ifname = NULL, *user = NULL, *pass = NULL, *termtype = NULL, *cmd, *spec;
 	dn_u16 addr = (23 << 10) | 269, node, router;
 	int c, verbose = 0, blocking = 1, reason, rc = 1;
@@ -682,7 +686,7 @@ int main(int argc, char **argv)
 	struct dap *d;
 	double t0;
 
-	while ((c = getopt(argc, argv, "a:i:vu:p:nt:r:")) != -1) {
+	while ((c = getopt(argc, argv, "a:i:vu:p:nt:r:G:S:")) != -1) {
 		switch (c) {
 		case 'a': if (dn_aton(optarg, &addr)) usage(argv[0]); break;
 		case 'i': ifname = optarg; break;
@@ -692,9 +696,13 @@ int main(int argc, char **argv)
 		case 'n': blocking = 0; break;
 		case 't': termtype = optarg; break;
 		case 'r': if (dn_aton(optarg, &router)) usage(argv[0]); dnenv_set_router(router); break;
+		case 'G': gwline = optarg; break;
+		case 'S': gwstate = optarg; break;
 		default: usage(argv[0]);
 		}
 	}
+	if (gwline && dnenv_set_gateway(gwline, gwstate, &addr))
+		return 1;
 	if (argc - optind == 1 && !strcmp(argv[optind], "serve")) {
 		if (dnenv_open(ifname, addr, verbose))
 			return 1;

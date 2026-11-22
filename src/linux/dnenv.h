@@ -19,6 +19,10 @@ int  dnenv_stopped(void);           /* SIGINT/SIGTERM seen */
 int  dn_aton(const char *s, dn_u16 *out);   /* "23.208" -> address */
 /* router to use while no router hello is heard; call before dnenv_open */
 void dnenv_set_router(dn_u16 addr);
+/* use the decnet-gateway tunnel of the DNGW1 client line in linefile
+   instead of an interface; statefile keeps the counter epoch (NULL: none).
+   Sets *addr to the line's address. Call before dnenv_open. */
+int  dnenv_set_gateway(const char *linefile, const char *statefile, dn_u16 *addr);
 /* frames of another ethertype (LAT) to input; sending them; our MAC */
 void dnenv_other(unsigned type, void (*input)(const unsigned char *src,
                  const unsigned char *dst, const unsigned char *payload, unsigned len));

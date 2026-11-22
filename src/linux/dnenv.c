@@ -6,6 +6,10 @@
  * ETH_P_ALL is used because a protocol-specific socket sees nothing on a
  * bridge port (eth0 in br0): the bridge takes the frames first.
  *
+ * Gateway mode (dnenv_set_gateway): instead of the raw socket, the frames
+ * go through Hans Hübner's decnet-gateway tunnel (UDP, ChaCha20-Poly1305,
+ * src/dngw); the node then has the address of the client line.
+ *
  * Test aid: with DN_NOMULTICAST=1 in the environment, multicast frames are
  * dropped on input, as many WLANs (FRITZ!Box) do for non-IP multicast.
  *
@@ -14,6 +18,7 @@
  */
 #include <arpa/inet.h>
 #include <errno.h>
+#include <netdb.h>
 #include <linux/if_packet.h>
 #include <net/ethernet.h>
 #include <net/if.h>
@@ -27,6 +32,7 @@
 #include <unistd.h>
 
 #include "dnenv.h"
+#include "../dngw/dngw.h"
 
 static int sock = -1;
 static int ifindex;
@@ -38,6 +44,22 @@ static void (*other_input)(const unsigned char *src, const unsigned char *dst,
 static unsigned other_type;
 static dn_u16 static_router;
 static int no_multicast;
+
+/* gateway mode */
+static int gw_mode, gw_alive, gw_verbose;
+static struct dngw gw;
+static uint32_t gw_keyid;
+static uint8_t gw_key[32];
+static char gw_host[256];
+static unsigned gw_port;
+static const char *gw_state;
+static struct sockaddr_storage gw_addr;
+static socklen_t gw_alen;
+static unsigned long gw_last_tx, gw_last_rx, gw_last_resolve;
+static uint32_t gw_saved_epoch;
+
+static unsigned long now_ms(void);
+static void gw_send(const unsigned char *frame, unsigned len);
 
 static void on_signal(int sig)
 {
@@ -63,6 +85,11 @@ static void send_eth(unsigned type, const dn_u8 *dst, const dn_u8 *payload, unsi
 	f[12] = (unsigned char)(type >> 8);
 	f[13] = (unsigned char)type;
 	memcpy(f + 14, payload, len);
+	if (gw_mode) {                  /* no padding: the gateway's LAN side pads */
+		if (n <= DNGW_MAXFRAME)
+			gw_send(f, n);
+		return;
+	}
 	while (n < 60)
 		f[n++] = 0;
 	memset(&sa, 0, sizeof sa);
@@ -138,12 +165,141 @@ int dn_aton(const char *s, dn_u16 *out)
 	return 0;
 }
 
+/* ---- gateway tunnel --------------------------------------------------------- */
+
+int dnenv_set_gateway(const char *linefile, const char *statefile, dn_u16 *addr)
+{
+	char line[512];
+	unsigned area, node;
+	FILE *f = fopen(linefile, "r");
+
+	if (!f) {
+		perror(linefile);
+		return -1;
+	}
+	if (!fgets(line, sizeof line, f) ||
+	    !dngw_parse_line(line, gw_host, sizeof gw_host, &gw_port, &gw_keyid,
+	                     &area, &node, gw_key)) {
+		fprintf(stderr, "%s: not a DNGW1 client line\n", linefile);
+		fclose(f);
+		return -1;
+	}
+	fclose(f);
+	memset(line, 0, sizeof line);
+	gw_state = statefile;
+	gw_mode = 1;
+	*addr = (dn_u16)((area << 10) | node);
+	return 0;
+}
+
+static int gw_resolve(void)
+{
+	struct addrinfo hints, *res;
+	char port[8];
+	int r;
+
+	gw_last_resolve = now_ms();
+	memset(&hints, 0, sizeof hints);
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_DGRAM;
+	snprintf(port, sizeof port, "%u", gw_port);
+	r = getaddrinfo(gw_host, port, &hints, &res);
+	if (r) {
+		fprintf(stderr, "gateway %s: %s\n", gw_host, gai_strerror(r));
+		return -1;
+	}
+	if (sock >= 0 && res->ai_family != gw_addr.ss_family) {
+		close(sock);
+		sock = -1;
+	}
+	if (sock < 0) {
+		sock = socket(res->ai_family, SOCK_DGRAM, 0);
+		if (sock < 0) {
+			perror("socket");
+			freeaddrinfo(res);
+			return -1;
+		}
+	}
+	memcpy(&gw_addr, res->ai_addr, res->ai_addrlen);
+	gw_alen = res->ai_addrlen;
+	freeaddrinfo(res);
+	return 0;
+}
+
+static int gw_save_epoch(uint32_t epoch)
+{
+	FILE *f;
+
+	if (!gw_state)
+		return 0;
+	f = fopen(gw_state, "w");
+	if (!f || fprintf(f, "%lu\n", (unsigned long)epoch) < 0 || fflush(f) ||
+	    fsync(fileno(f)) || fclose(f)) {
+		perror(gw_state);
+		return -1;
+	}
+	gw_saved_epoch = epoch;
+	return 0;
+}
+
+static void gw_send(const unsigned char *frame, unsigned len)
+{
+	unsigned char pkt[DNGW_MAXPKT];
+	unsigned n;
+
+	/* a new epoch is kept before its first counter goes out */
+	if (dngw_epoch(&gw) != gw_saved_epoch)
+		gw_save_epoch(dngw_epoch(&gw));
+	n = dngw_seal(&gw, frame, len, pkt);
+	if (sendto(sock, pkt, n, 0, (struct sockaddr *)&gw_addr, gw_alen) < 0 &&
+	    errno != EAGAIN)
+		perror("sendto gateway");
+	gw_last_tx = now_ms();
+	if (gw_verbose > 2 && len)
+		fprintf(stderr, "-> %u bytes, type %02x%02x, to %02x:%02x:%02x:%02x:%02x:%02x\n",
+		        len, frame[12], frame[13], frame[0], frame[1], frame[2], frame[3],
+		        frame[4], frame[5]);
+}
+
+static int gw_open(void)
+{
+	unsigned long saved = 0;
+	int have = 0;
+	uint32_t epoch;
+	FILE *f;
+
+	if (gw_resolve())
+		return -1;
+	if (gw_state && (f = fopen(gw_state, "r")) != NULL) {
+		have = fscanf(f, "%lu", &saved) == 1;
+		fclose(f);
+	}
+	if (!gw_state)
+		fprintf(stderr, "warning: no epoch state file; the clock must not go back\n");
+	epoch = dngw_start(&gw, gw_keyid, gw_key, (uint32_t)time(NULL), (uint32_t)saved, have);
+	if (gw_save_epoch(epoch))
+		return -1;
+	fprintf(stderr, "tunnel to %s:%u as %u.%u (%02x:%02x:%02x:%02x:%02x:%02x)\n",
+	        gw_host, gw_port, (unsigned)(mymac[5] >> 2),
+	        (unsigned)(((mymac[5] & 3) << 8) | mymac[4]), mymac[0], mymac[1], mymac[2],
+	        mymac[3], mymac[4], mymac[5]);
+	gw_send(NULL, 0);                       /* keepalive at start */
+	return 0;
+}
+
 int dnenv_open(const char *ifname, dn_u16 addr, int verbose)
 {
 	struct dn_env env;
 	struct sockaddr_ll sa;
 	struct packet_mreq mr;
 
+	if (gw_mode) {
+		dn_node_mac(mymac, addr);
+		gw_verbose = verbose;
+		if (gw_open())
+			return -1;
+		goto core;
+	}
 	if (!ifname)
 		ifname = if_nametoindex("br0") ? "br0" : "eth0";
 	ifindex = if_nametoindex(ifname);
@@ -171,6 +327,7 @@ int dnenv_open(const char *ifname, dn_u16 addr, int verbose)
 		perror("promiscuous");
 
 	dn_node_mac(mymac, addr);
+core:
 	memset(&env, 0, sizeof env);
 	env.send_frame = send_frame;
 	env.alloc = xalloc;
@@ -192,11 +349,78 @@ int dnenv_open(const char *ifname, dn_u16 addr, int verbose)
 	return 0;
 }
 
+/* a received frame (raw socket or tunnel): to the core or the other
+   ethertype's handler if it is for us */
+static void deliver(const unsigned char *f, unsigned n)
+{
+	if (no_multicast && n > 14 && (f[0] & 1) && memcmp(f, "\xff\xff\xff\xff\xff\xff", 6))
+		return;
+	if (n <= 14 || !memcmp(f + 6, mymac, 6) || (memcmp(f, mymac, 6) && !(f[0] & 1)))
+		return;
+	if (f[12] == (DN_ETHERTYPE >> 8) && f[13] == (DN_ETHERTYPE & 0xff))
+		dn_input(f + 6, f, f + 14, n - 14);
+	else if (other_input && f[12] == (other_type >> 8) && f[13] == (other_type & 0xff))
+		other_input(f + 6, f, f + 14, n - 14);
+}
+
+static void gw_pump(int timeout_ms)
+{
+	struct pollfd pfd;
+	unsigned char pkt[DNGW_MAXPKT + 64], *f;
+	unsigned len;
+	unsigned long t;
+	ssize_t n;
+	int r;
+
+	pfd.fd = sock;
+	pfd.events = POLLIN;
+	pfd.revents = 0;
+	r = poll(&pfd, 1, timeout_ms > 100 ? 100 : timeout_ms);
+	if (r > 0 && (pfd.revents & POLLIN)) {
+		while ((n = recv(sock, pkt, sizeof pkt, MSG_DONTWAIT)) > 0) {
+			if (!dngw_open(&gw, pkt, (unsigned)n, &f, &len))
+				continue;               /* silently, as the protocol says */
+			gw_last_rx = now_ms();
+			if (!gw_alive) {
+				fprintf(stderr, "gateway %s answers\n", gw_host);
+				gw_alive = 1;
+			}
+			if (len) {
+				if (gw_verbose > 2)
+					fprintf(stderr, "<- %u bytes, type %02x%02x, from %02x:%02x:%02x:%02x:%02x:%02x\n",
+					        len, f[12], f[13], f[6], f[7], f[8], f[9], f[10], f[11]);
+				deliver(f, len);
+			}
+		}
+	} else if (r < 0 && errno != EINTR) {
+		perror("poll");
+		stop = 1;
+	}
+	t = now_ms();
+	if (t - gw_last_tx >= DNGW_KEEPALIVE_S * 1000UL)
+		gw_send(NULL, 0);
+	if (gw_alive && t - gw_last_rx > DNGW_LOST_S * 1000UL) {
+		fprintf(stderr, "gateway %s not answering\n", gw_host);
+		gw_alive = 0;
+	}
+	if (!gw_alive && t - gw_last_resolve >= 30000)
+		gw_resolve();               /* a home line's address changes */
+	if (t - last_tick >= 100) {
+		dn_tick((unsigned)(t - last_tick));
+		last_tick = t;
+	}
+}
+
 void dnenv_pump(int timeout_ms)
 {
 	struct pollfd pfd;
 	unsigned long t;
 	int r;
+
+	if (gw_mode) {
+		gw_pump(timeout_ms);
+		return;
+	}
 
 	pfd.fd = sock;
 	pfd.events = POLLIN;
@@ -209,20 +433,8 @@ void dnenv_pump(int timeout_ms)
 		ssize_t n;
 
 		while ((n = recvfrom(sock, f, sizeof f, MSG_DONTWAIT, (struct sockaddr *)&from, &fl)) > 0) {
-			if (no_multicast && n > 14 && (f[0] & 1) && memcmp(f, "\xff\xff\xff\xff\xff\xff", 6)) {
-				fl = sizeof from;
-				continue;
-			}
-			if (n > 14 && from.sll_pkttype != PACKET_OUTGOING &&
-			    f[12] == (DN_ETHERTYPE >> 8) && f[13] == (DN_ETHERTYPE & 0xff) &&
-			    memcmp(f + 6, mymac, 6) != 0 &&
-			    (!memcmp(f, mymac, 6) || (f[0] & 1)))
-				dn_input(f + 6, f, f + 14, (unsigned)n - 14);
-			else if (n > 14 && other_input && from.sll_pkttype != PACKET_OUTGOING &&
-			         f[12] == (other_type >> 8) && f[13] == (other_type & 0xff) &&
-			         memcmp(f + 6, mymac, 6) != 0 &&
-			         (!memcmp(f, mymac, 6) || (f[0] & 1)))
-				other_input(f + 6, f, f + 14, (unsigned)n - 14);
+			if (from.sll_pkttype != PACKET_OUTGOING)
+				deliver(f, (unsigned)n);
 			fl = sizeof from;
 		}
 	} else if (r < 0 && errno != EINTR) {
