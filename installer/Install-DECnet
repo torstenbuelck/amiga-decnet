@@ -1,4 +1,4 @@
-; $VER: Install-DECnet 0.4 (22.11.2026)
+; $VER: Install-DECnet 0.5 (22.11.2026)
 ;
 ; Installer script for the Amiga DECnet Phase IV endnode stack.
 ; Needs the Commodore Installer (V43 recommended) and AmigaOS 2.04.
@@ -16,7 +16,7 @@
 ; Copyright (C) 2026  Torsten Bülck (tuti)
 ; SPDX-License-Identifier: GPL-2.0-or-later
 
-(set #version "0.4")
+(set #version "0.5")
 (set @app-name "DECnet")
 (set @default-dest "SYS:")
 
@@ -104,6 +104,36 @@
 	                         "Change it later in DECnet:S/DECnet-Start (line .def ROUTER).\n\n"))
 	(set #t-router-bad (cat "\" is not a DECnet address.\n\n"
 	                        "Use area.node (area 1-63, node 1-1023), or leave it empty."))
+	(set #t-transport "How does this Amiga reach DECnet?")
+	(set #t-tr-direct "Network card: DECnet directly on the network")
+	(set #t-tr-udp "DECnet gateway over TCP/IP")
+	(set #t-transport-help (cat "Network card: DECnet sets the card's Ethernet address and "
+	                            "talks to the other nodes directly. The SANA-II driver must "
+	                            "allow that, and DECnet starts before the TCP/IP software.\n\n"
+	                            "DECnet gateway: the DECnet frames go encrypted over UDP to a "
+	                            "decnet-gateway (e.g. at RetroStar), which puts them into its "
+	                            "DECnet network. For WLANs and networks without DECnet. It "
+	                            "needs a running TCP/IP stack (Roadshow, AmiTCP, Miami) and "
+	                            "a client line from whoever runs the gateway; the card keeps "
+	                            "its own address.\n\n"))
+	(set #t-gw-keep "Keep the gateway line installed in ENVARC:DECnet/Gateway?")
+	(set #t-gw-keep-yes "Keep it")
+	(set #t-gw-new "Choose a new one")
+	(set #t-gw-file (cat "Choose the file with the client line of your DECnet gateway "
+	                     "(one line starting with DNGW1). It holds a key: keep it private."))
+	(set #t-gw-help (cat "Whoever runs the gateway creates one line per Amiga; it names the "
+	                     "gateway, this Amiga's DECnet address and its key. It is copied "
+	                     "to ENVARC:DECnet/Gateway.\n\n"))
+	(set #t-gw-bad "\" is not the client line of a DECnet gateway (DNGW1 ...).")
+	(set #t-gw-addr-1 "The gateway line gives this Amiga the DECnet address ")
+	(set #t-gw-addr-2 ".")
+	(set #t-cp-gw "Copying the gateway line to ENVARC:DECnet/Gateway")
+	(set #t-boot-udp (cat "Start DECnet at boot?\n\n"
+	                      "This adds a DECnet block at the end of S:User-Startup, after "
+	                      "your TCP/IP software (DECnet goes through it)."))
+	(set #t-start-udp (cat "Start DECnet now?\n\n"
+	                       "The TCP/IP stack must be running; DECnet waits up to 30 "
+	                       "seconds for it."))
 
 	(set #t-where "Where should the drawer \"DECnet\" be created?")
 	(set #t-update-1 "DECnet is already installed in \"")
@@ -149,7 +179,8 @@
 	(set #t-boot-help-1 "Without it, start DECnet yourself with\n  Assign DECnet: \"")
 	(set #t-boot-help-2 (cat "\"\n  Path DECnet:C DECnet:S ADD\n"
 	                         "  Execute DECnet:S/DECnet-Start\n"
-	                         "before any TCP/IP software. The old S:User-Startup is kept as "
+	                         "before any TCP/IP software (network card) or after it (DECnet "
+	                         "gateway). The old S:User-Startup is kept as "
 	                         "S:User-Startup.bak."))
 	(set #t-yes "Yes")
 	(set #t-no "No")
@@ -193,9 +224,9 @@
 	                    "to ENV:DECnet/nodes (or reboot): DN: reads the copy in ENV:. "
 	                    "Read "))
 	(set #t-done-doc "ReadMe")
-	(set #t-done-4 (cat " for more.\n\n"
-	                    "Please reboot before using TCP/IP, so that DECnet configures the "
-	                    "network card first."))
+	(set #t-done-4 " for more.")
+	(set #t-done-5 (cat "\n\nPlease reboot before using TCP/IP, so that DECnet configures "
+	                    "the network card first."))
 
 	(set #t-welcome-1 "DECnet Phase IV Client ")
 	(set #t-welcome-2 (cat " for Amiga.\n\n"
@@ -289,6 +320,38 @@
 	(set #t-router-bad (cat "\" ist keine DECnet-Adresse.\n\n"
 	                        "Verwenden Sie Bereich.Knoten (Bereich 1-63, Knoten 1-1023) "
 	                        "oder lassen Sie das Feld leer."))
+	(set #t-transport "Wie erreicht dieser Amiga DECnet?")
+	(set #t-tr-direct "Netzwerkkarte: DECnet direkt im Netz")
+	(set #t-tr-udp "DECnet-Gateway über TCP/IP")
+	(set #t-transport-help (cat "Netzwerkkarte: DECnet setzt die Ethernet-Adresse der Karte "
+	                            "und spricht direkt mit den anderen Knoten. Der SANA-II-Treiber "
+	                            "muss das erlauben, und DECnet startet vor der "
+	                            "TCP/IP-Software.\n\n"
+	                            "DECnet-Gateway: Die DECnet-Pakete gehen verschlüsselt per UDP "
+	                            "zu einem decnet-gateway (z. B. bei RetroStar), das sie in "
+	                            "sein DECnet-Netz gibt. Für WLANs und Netze ohne DECnet. Es "
+	                            "braucht einen laufenden TCP/IP-Stack (Roadshow, AmiTCP, Miami) "
+	                            "und eine Client-Zeile vom Betreiber des Gateways; die Karte "
+	                            "behält ihre eigene Adresse.\n\n"))
+	(set #t-gw-keep "Die Gateway-Zeile in ENVARC:DECnet/Gateway behalten?")
+	(set #t-gw-keep-yes "Behalten")
+	(set #t-gw-new "Neue wählen")
+	(set #t-gw-file (cat "Wählen Sie die Datei mit der Client-Zeile Ihres DECnet-Gateways "
+	                     "(eine Zeile, die mit DNGW1 beginnt). Sie enthält einen Schlüssel: "
+	                     "nicht weitergeben."))
+	(set #t-gw-help (cat "Wer das Gateway betreibt, legt für jeden Amiga eine Zeile an; sie "
+	                     "nennt das Gateway, die DECnet-Adresse dieses Amiga und seinen "
+	                     "Schlüssel. Sie wird nach ENVARC:DECnet/Gateway kopiert.\n\n"))
+	(set #t-gw-bad "\" ist keine Client-Zeile eines DECnet-Gateways (DNGW1 ...).")
+	(set #t-gw-addr-1 "Die Gateway-Zeile gibt diesem Amiga die DECnet-Adresse ")
+	(set #t-gw-addr-2 ".")
+	(set #t-cp-gw "Kopiere die Gateway-Zeile nach ENVARC:DECnet/Gateway")
+	(set #t-boot-udp (cat "DECnet beim Booten starten?\n\n"
+	                      "Dazu kommt ein DECnet-Block ans Ende von S:User-Startup, nach "
+	                      "Ihrer TCP/IP-Software (DECnet läuft über sie)."))
+	(set #t-start-udp (cat "DECnet jetzt starten?\n\n"
+	                       "Der TCP/IP-Stack muss laufen; DECnet wartet bis zu 30 Sekunden "
+	                       "auf ihn."))
 
 	(set #t-where "Wo soll die Schublade \"DECnet\" angelegt werden?")
 	(set #t-update-1 "DECnet ist schon in \"")
@@ -338,7 +401,8 @@
 	(set #t-boot-help-1 "Ohne diesen Block starten Sie DECnet selbst mit\n  Assign DECnet: \"")
 	(set #t-boot-help-2 (cat "\"\n  Path DECnet:C DECnet:S ADD\n"
 	                         "  Execute DECnet:S/DECnet-Start\n"
-	                         "vor jeder TCP/IP-Software. Die alte S:User-Startup bleibt als "
+	                         "vor jeder TCP/IP-Software (Netzwerkkarte) oder nach ihr "
+	                         "(DECnet-Gateway). Die alte S:User-Startup bleibt als "
 	                         "S:User-Startup.bak erhalten."))
 	(set #t-yes "Ja")
 	(set #t-no "Nein")
@@ -388,9 +452,9 @@
 	                    "ENV:DECnet/nodes (oder starten Sie neu): DN: liest die Kopie in "
 	                    "ENV:. Mehr steht in "))
 	(set #t-done-doc "LiesMich")
-	(set #t-done-4 (cat ".\n\n"
-	                    "Bitte starten Sie neu, bevor Sie TCP/IP benutzen, damit DECnet "
-	                    "die Netzwerkkarte zuerst einrichtet."))
+	(set #t-done-4 ".")
+	(set #t-done-5 (cat "\n\nBitte starten Sie neu, bevor Sie TCP/IP benutzen, damit "
+	                    "DECnet die Netzwerkkarte zuerst einrichtet."))
 
 	(set #t-welcome-1 "DECnet-Phase-IV-Client ")
 	(set #t-welcome-2 (cat " für Amiga.\n\n"
@@ -502,6 +566,9 @@
 			(delete "ENVARC:DECnet/maint-node" (optional "force") (prompt "") (help ""))
 			(delete "ENVARC:DECnet/maint-latnodes" (optional "force") (prompt "") (help ""))
 			(delete "ENVARC:DECnet/maint-password" (optional "force") (prompt "") (help ""))
+			; the gateway key goes; its epoch stays, so that a new
+			; installation with the same line never repeats counters
+			(delete "ENVARC:DECnet/Gateway" (optional "force") (prompt "") (help ""))
 			(delete "ENV:DECnet/maint-node" (optional "force") (prompt "") (help ""))
 			(delete "ENV:DECnet/maint-latnodes" (optional "force") (prompt "") (help ""))
 			(delete "ENV:DECnet/maint-password" (optional "force") (prompt "") (help ""))
@@ -547,6 +614,43 @@
 			(message "\"" #router #t-router-bad)
 		)
 	)
+)
+
+; the gateway line (TRANSPORT=UDP): keep the installed one or choose a
+; file; dnetd SHOWADDR checks it and gives the address (#addr). Sets
+; #gwfile and #gwkeep.
+(procedure P_GATEWAY
+	(set #gwkeep 0)
+	(if (exists "ENVARC:DECnet/Gateway")
+		(set #gwkeep (askbool
+			(prompt #t-gw-keep)
+			(help #t-gw-help @askbool-help)
+			(choices #t-gw-keep-yes #t-gw-new)
+			(default 1)))
+	)
+	(set #gwfile (if #gwkeep "ENVARC:DECnet/Gateway" ""))
+	(set #addr-ok 0)
+	(while (NOT #addr-ok)
+		(if (NOT #gwkeep)
+			(set #gwfile (askfile
+				(prompt #t-gw-file)
+				(help #t-gw-help @askfile-help)
+				(default "SYS:")
+			))
+		)
+		; the address goes through a variable: getenv reads only ENV:
+		(set #rc (run (cat "C/dnetd GATEWAY=\"" #gwfile "\" SHOWADDR >ENV:dnlineaddr") (safe)))
+		(set #addr (if (= #rc 0) (getenv "dnlineaddr") ""))
+		(P_CHECKADDR)
+		(if (NOT #addr-ok)
+			(
+			(message "\"" #gwfile #t-gw-bad)
+			(set #gwkeep 0)
+			)
+		)
+	)
+	(delete "ENV:dnlineaddr" (optional "force") (safe) (prompt "") (help ""))
+	(message #t-gw-addr-1 #addr #t-gw-addr-2)
 )
 
 ; ---------------------------------------------------------------- install
@@ -640,9 +744,21 @@
 	(if (= #device "") (set #device "DEVS:Networks/a2065.device"))
 	(set #unit (getenv "DECnet/Unit"))
 	(set #unit (if (= #unit "") 0 (+ 0 #unit)))
+	(set #transport (getenv "DECnet/Transport"))
 
-	; ---- who am I
-	(set #addr-ok 0)
+	; ---- how: network card or gateway over TCP/IP
+	(set #udp (askchoice
+		(prompt #t-transport)
+		(help #t-transport-help @askchoice-help)
+		(choices #t-tr-direct #t-tr-udp)
+		(default (if (= #transport "UDP") 1 0))
+	))
+	(set #transport (if #udp "UDP" "DIRECT"))
+	(set #gwkeep 1)
+	(if #udp (P_GATEWAY))
+
+	; ---- who am I (with a gateway, the line gave the address)
+	(set #addr-ok #udp)
 	(while (NOT #addr-ok)
 		(set #addr (askstring
 			(prompt #t-addr)
@@ -667,13 +783,14 @@
 		)
 	)
 
-	; ---- card
-	(P_DEVICE)
+	; ---- card (not used through a gateway; #rc 0: no router question)
+	(set #rc 0)
+	(if (NOT #udp) (P_DEVICE))
 
 	; ---- router by hand: asked only when dncheck saw no DECnet traffic
 	; (rc 5: e.g. a WLAN that drops multicast), when one was set before, or
 	; at expert level. Empty = none.
-	(if (OR (= #rc 5) (<> #router "") (= @user-level 2))
+	(if (AND (NOT #udp) (OR (= #rc 5) (<> #router "") (= @user-level 2)))
 		(P_ASKROUTER)
 	)
 
@@ -721,9 +838,9 @@
 		(prompt #t-wr-start)
 		(help @textfile-help)
 		(dest (tackon #target "S/DECnet-Start"))
-		(append ".key ADDR/K,UNIT/K,DEVICE/K,ROUTER/K\n.bra {\n.ket }\n"
+		(append ".key ADDR/K,UNIT/K,DEVICE/K,ROUTER/K,TRANSPORT/K\n.bra {\n.ket }\n"
 		        ".def ADDR " #addr "\n.def UNIT " #unit "\n.def DEVICE \"" #device "\"\n"
-		        ".def ROUTER \"" #router "\"\n")
+		        ".def ROUTER \"" #router "\"\n.def TRANSPORT \"" #transport "\"\n")
 		(include "S/DECnet-Start.body")
 	)
 	; the script bit lets the Shell run them by name (DECnet-Stop), without
@@ -759,8 +876,17 @@
 		(confirm)
 	)
 
-	; ---- node list
+	; ---- node list (and the gateway line)
 	(makedir "ENVARC:DECnet" (prompt "") (help ""))
+	(if (NOT #gwkeep)
+		(copyfiles
+			(prompt #t-cp-gw)
+			(help @copyfiles-help)
+			(source #gwfile)
+			(dest "ENVARC:DECnet")
+			(newname "Gateway")
+		)
+	)
 	(if (exists "ENVARC:DECnet/nodes")
 		(message #t-nodes-kept (help #t-nodes-kept-help))
 		(
@@ -787,15 +913,17 @@
 	(set #var "Address") (set #val #addr) (P_SAVEVAR)
 	(set #var "Name") (set #val #name) (P_SAVEVAR)
 	(set #var "Router") (set #val #router) (P_SAVEVAR)
+	(set #var "Transport") (set #val #transport) (P_SAVEVAR)
 
 	; ---- start at boot
 	(if (askbool
-		(prompt #t-boot)
+		(prompt (if #udp #t-boot-udp #t-boot))
 		(help #t-boot-help-1 #target #t-boot-help-2)
 		(choices #t-yes #t-no)
 		(default 0))
 		(
-			(set #rc (run (cat "\"" (tackon #target "C/dnstartup") "\" DIR=\"" #target "\"")
+			(set #rc (run (cat "\"" (tackon #target "C/dnstartup") "\" DIR=\"" #target "\""
+			                   (if #udp " AFTERNET" ""))
 				(prompt #t-boot-run)
 				(help @run-help)
 			))
@@ -812,7 +940,7 @@
 	(makeassign "DECnet" #target)
 	(set #running (= 0 (run "DECnet:C/dnetd >NIL: CHECK")))
 	(if (askbool
-		(prompt (if #running #t-restart #t-start))
+		(prompt (if #running #t-restart (if #udp #t-start-udp #t-start)))
 		(help #t-start-help)
 		(choices (if #running #t-restart-yes #t-start-yes) #t-later)
 		(default 0))
@@ -845,8 +973,10 @@
 		)
 	)
 
+	; the reboot note is for the network card only: through a gateway,
+	; DECnet runs after TCP/IP anyway
 	(exit #t-done-1 #version #t-done-2 #target #t-done-3
-	      (tackon #target #t-done-doc) #t-done-4 (quiet))
+	      (tackon #target #t-done-doc) #t-done-4 (if #udp "" #t-done-5) (quiet))
 )
 
 ; ---------------------------------------------------------------- main

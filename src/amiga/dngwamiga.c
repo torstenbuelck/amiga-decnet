@@ -213,6 +213,24 @@ int gwt_open(const char *linefile, UWORD want, UWORD *area, UWORD *node, gwt_log
 	return 0;
 }
 
+BOOL gwt_line_addr(const char *linefile, UWORD *area, UWORD *node)
+{
+	char line[256], h[128];
+	unsigned p, a, n;
+	uint32_t id;
+	uint8_t k[32];
+	BOOL ok;
+
+	if (!read_file(linefile, line, sizeof line))
+		return FALSE;
+	ok = dngw_parse_line(line, h, sizeof h, &p, &id, &a, &n, k) != 0;
+	memset(line, 0, sizeof line);
+	memset(k, 0, sizeof k);
+	*area = (UWORD)a;
+	*node = (UWORD)n;
+	return ok;
+}
+
 void gwt_close(void)
 {
 	if (sock >= 0)

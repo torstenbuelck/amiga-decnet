@@ -91,6 +91,8 @@ Was wohin kommt
   DECnet/ReadMe, LiesMich  diese Anleitung, englisch und deutsch
   LIBS:decnet.library      von den Programmen oben benutzt
   ENVARC:DECnet/nodes      Ihre Knotenliste
+  ENVARC:DECnet/Gateway    die Client-Zeile des Gateways (nur über
+                           ein DECnet-Gateway), GatewayEpoch ihr Zähler
 
 
 Die Knotenliste
@@ -302,9 +304,59 @@ nennt T:dnetd.log den "designated router".
 
 Das WLAN muss zum selben Netz gehören wie der DECnet-Router: Repeater
 und WLAN-Brücken, die nur IP durchreichen, tragen gar kein DECnet.
+Der andere Weg ist ein DECnet-Gateway, siehe nächster Abschnitt.
+
+Über ein DECnet-Gateway
+-----------------------
+Statt über die Netzwerkkarte kann DECnet auch über ein decnet-gateway
+laufen (von Hans Hübner, siehe
+https://code.netzhansa.com/hanshuebner/decnet-gateway): Die
+DECnet-Pakete gehen verschlüsselt per UDP zum Gateway, das sie in sein
+DECnet-Netz gibt. RetroStar betreibt eines. Das geht über jede
+TCP/IP-Verbindung: ein WLAN, ein Netz ohne DECnet, einen mobilen
+Router. Die Karte behält ihre eigene Ethernet-Adresse, und Router- und
+LAT-Ankündigungen kommen über das Gateway; die WLAN-Grenzen oben
+gelten hier also nicht.
+
+Sie brauchen einen laufenden TCP/IP-Stack (Roadshow, AmiTCP, Miami)
+und eine Client-Zeile vom Betreiber des Gateways: eine Zeile, die mit
+DNGW1 beginnt, mit dem Namen des Gateways, der DECnet-Adresse dieses
+Amiga und einem Schlüssel. Behandeln Sie sie wie ein Passwort; eine
+Zeile gehört zu genau einem Rechner.
+
+Wählen Sie in der Installation "DECnet-Gateway über TCP/IP" und die
+Datei mit der Zeile. Sie wird nach ENVARC:DECnet/Gateway kopiert, die
+Adresse wird aus ihr übernommen, und der DECnet-Block kommt ans Ende
+von S:User-Startup, nach der TCP/IP-Software. Beim Booten wartet dnetd
+bis zu 30 Sekunden auf den TCP/IP-Stack. Von Hand:
+
+  DECnet-Start TRANSPORT=UDP
+
+Jeder Start zählt eine Nummer hoch, die das Gateway prüft (damit
+niemand alte Pakete wiederholen kann); dnetd hält sie in
+ENVARC:DECnet/GatewayEpoch fest und startet nicht, wenn es sie dort
+nicht schreiben kann (schreibgeschützte Diskette). Spielen Sie keine
+alte Kopie dieser Datei zurück: Ein Amiga ohne Uhr finge dann unter
+der Nummer an, die das Gateway schon gesehen hat, und das Gateway
+ignoriert ihn wortlos. Dann hilft ein neuer Schlüssel für diesen Amiga
+(seine Zeile ändert sich) oder eine höhere Nummer in der Datei.
+
+Die Verschlüsselung kostet Zeit: Ein 68000 schafft einige KB/s, ab
+einem 68020 ist es bequem.
+
 
 Versionsgeschichte
 ------------------
+0.5 (22.11.2026)
+  - DECnet über ein DECnet-Gateway per TCP/IP (decnet-gateway von Hans
+    Hübner, z. B. bei RetroStar): dnetd 0.9 TRANSPORT=UDP, die
+    Installation fragt "Netzwerkkarte oder Gateway", übernimmt die
+    Client-Zeile und setzt DECnet hinter die TCP/IP-Software; siehe
+    "Über ein DECnet-Gateway"
+  - DECnet-Start wartet, bis dnetd läuft oder aufgegeben hat (dnetd
+    CHECK WAIT), statt fest 5 Sekunden
+  - dnstartup 0.4: AFTERNET setzt den Block hinter die Netzwerk-Software
+
 0.4 (22.11.2026)
   - dnetd 0.9: ROUTER=Bereich.Knoten, der Router, den es benutzt,
     solange es keinen hört (WLANs, die DECnet-Multicast verwerfen);

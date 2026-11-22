@@ -22,6 +22,9 @@ typedef void (*gwt_log_fn)(const char *fmt, ...);
 int  gwt_open(const char *linefile, UWORD want, UWORD *area, UWORD *node, gwt_log_fn log);
 void gwt_close(void);
 
+/* only reads the address of the line in linefile; TRUE if it is a line */
+BOOL gwt_line_addr(const char *linefile, UWORD *area, UWORD *node);
+
 /* one Ethernet frame (dst, src, type, payload), at most 1514 bytes */
 void gwt_send(const UBYTE *frame, ULONG len);
 

@@ -83,6 +83,8 @@ What goes where
   DECnet/ReadMe, LiesMich  this text, in English and German
   LIBS:decnet.library      used by the programs above
   ENVARC:DECnet/nodes      your node list
+  ENVARC:DECnet/Gateway    the gateway's client line (only through
+                           a DECnet gateway), GatewayEpoch its count
 
 
 The node list
@@ -273,9 +275,57 @@ T:dnetd.log names the "designated router".
 
 The WLAN must be part of the same network as the DECnet router:
 repeaters and WLAN bridges that pass only IP do not carry DECnet at all.
+The other way is a DECnet gateway, see the next section.
+
+Through a DECnet gateway
+------------------------
+Instead of the network card, DECnet can also go through a
+decnet-gateway (by Hans Hübner, see
+https://code.netzhansa.com/hanshuebner/decnet-gateway): the DECnet
+frames travel encrypted over UDP to the gateway, which puts them into
+its DECnet network. RetroStar runs one. That works over any TCP/IP
+connection: a WLAN, a network without DECnet, a mobile router. The card
+keeps its own Ethernet address, and router and LAT announcements come
+through the gateway, so the WLAN limits above do not apply.
+
+You need a running TCP/IP stack (Roadshow, AmiTCP, Miami) and a client
+line from whoever runs the gateway: one line starting with DNGW1, with
+the gateway's name, this Amiga's DECnet address and a key. Keep it
+private, like a password; one line belongs to one machine.
+
+In the installer, answer "DECnet gateway over TCP/IP" and choose the
+file with the line. It is copied to ENVARC:DECnet/Gateway, the address
+is taken from it, and the DECnet block goes at the end of
+S:User-Startup, after the TCP/IP software. At boot dnetd waits up to
+30 seconds for the TCP/IP stack. By hand:
+
+  DECnet-Start TRANSPORT=UDP
+
+Each start counts a number up that the gateway checks (so that nobody
+can replay old packets); dnetd keeps it in ENVARC:DECnet/GatewayEpoch
+and does not start if it cannot write it there (write-protected disk).
+Do not put back an old copy of that file: an Amiga without a clock
+would then start below the number the gateway has already seen, and
+the gateway ignores it without a word. If that happens, ask for a new
+key for this Amiga (its line changes) or set the number in the file
+higher.
+
+The encryption costs time: a 68000 moves a few KB/s, from a 68020 on
+it is comfortable.
+
 
 Version history
 ---------------
+0.5 (22.11.2026)
+  - DECnet through a DECnet gateway over TCP/IP (decnet-gateway by
+    Hans Hübner, e.g. at RetroStar): dnetd 0.9 TRANSPORT=UDP, the
+    installer asks "network card or gateway", takes the client line,
+    and puts DECnet after the TCP/IP software; see "Through a DECnet
+    gateway"
+  - DECnet-Start waits until dnetd runs or has given up (dnetd CHECK
+    WAIT), instead of a fixed 5 seconds
+  - dnstartup 0.4: AFTERNET puts the block after the network software
+
 0.4 (22.11.2026)
   - dnetd 0.9: ROUTER=area.node, the router to use while none is heard
     (WLANs that drop DECnet multicast); see "WLAN"

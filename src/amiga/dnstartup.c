@@ -1,7 +1,8 @@
 /*
  * dnstartup - add or remove the DECnet block in S:User-Startup.
  *
- * Usage: dnstartup DIR=drawer [FILE=S:User-Startup]   add or replace it
+ * Usage: dnstartup DIR=drawer [FILE=S:User-Startup] [AFTERNET]
+ *                                                    add or replace it
  *        dnstartup REMOVE [FILE=S:User-Startup]       remove it
  *
  * The block looks like the ones the Commodore Installer writes:
@@ -27,6 +28,10 @@
  * FILE.bak. If a ;BEGIN DECnet line has no ;END DECnet line (or the
  * other way round), the file is left alone (return code 20).
  *
+ * AFTERNET is for DECnet through a gateway over TCP/IP (dnetd
+ * TRANSPORT=UDP): the TCP/IP stack must run first, so the block goes at
+ * the end of the file, after the network software.
+ *
  * It also looks at S:Startup-Sequence: network software started there
  * before User-Startup comes too early for DECnet (return code 5).
  *
@@ -47,7 +52,7 @@
 
 #include <string.h>
 
-static const char version[] = "$VER: dnstartup 0.3 (16.11.2026)";
+static const char version[] = "$VER: dnstartup 0.4 (22.11.2026)";
 
 #define BEGIN_LINE ";BEGIN DECnet"
 #define END_LINE   ";END DECnet"
@@ -258,15 +263,15 @@ static BOOL net_before_user_startup(void)
 
 int main(void)
 {
-	static const char template[] = "DIR/K,REMOVE/S,FILE/K";
-	LONG args[3] = { 0, 0, 0 };
+	static const char template[] = "DIR/K,REMOVE/S,FILE/K,AFTERNET/S";
+	LONG args[4] = { 0, 0, 0, 0 };
 	struct RDArgs *rda;
 	const char *dir, *file;
 	char bak[256];
 	char *buf = NULL;
 	LONG len, i, start, at;
 	BPTR fh = 0;
-	BOOL remove, inblock = FALSE, done = FALSE, ok = TRUE, had = FALSE;
+	BOOL afternet, remove, inblock = FALSE, done = FALSE, ok = TRUE, had = FALSE;
 	int rc = RETURN_FAIL;
 
 	(void)version;
@@ -277,6 +282,7 @@ int main(void)
 	}
 	dir = (const char *)args[0];
 	remove = args[1] != 0;
+	afternet = args[3] != 0;
 	file = args[2] ? (const char *)args[2] : "S:User-Startup";
 	if (!dir == !remove) {
 		PutStr((STRPTR)"dnstartup: give either DIR=drawer or REMOVE\n");
@@ -312,7 +318,7 @@ int main(void)
 		PrintFault(IoErr(), (STRPTR)file);
 		goto out;
 	}
-	at = remove ? -1 : insert_pos(buf, len);
+	at = remove || afternet ? -1 : insert_pos(buf, len);
 	for (start = 0; ok && start < len; start = i + 1) {
 		LONG n;
 
@@ -354,9 +360,10 @@ int main(void)
 		       (STRPTR)file);
 	else
 		Printf(done ? "DECnet block added to %s, before the network software\n"
-		            : "DECnet block added to the end of %s\n", (STRPTR)file);
+		       : afternet ? "DECnet block added to the end of %s, after the network software\n"
+		       : "DECnet block added to the end of %s\n", (STRPTR)file);
 	rc = RETURN_OK;
-	if (!remove && net_before_user_startup()) {
+	if (!remove && !afternet && net_before_user_startup()) {
 		PutStr((STRPTR)"Warning: S:Startup-Sequence starts network software before\n"
 		       "User-Startup, so it configures the card before DECnet can.\n"
 		       "Move that line below the User-Startup call.\n");

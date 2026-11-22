@@ -5,7 +5,8 @@
  * Usage: dnetd ADDR=area.node [DEVICE=uaenet.device] [UNIT=n] [VERBOSE]
  *              [LOG=file] [ROUTER=area.node]
  *        dnetd TRANSPORT=UDP [GATEWAY=file] [ADDR=area.node] ...
- *        dnetd CHECK
+ *        dnetd CHECK [WAIT=seconds]
+ *        dnetd GATEWAY=file SHOWADDR
  *        dnetd STOP
  *   LOG appends each message to file, opened only for that line, so the
  *   log can be read while dnetd runs.
@@ -19,7 +20,13 @@
  *   same name + "Epoch". The node gets the line's address; an ADDR given
  *   as well must be the same. DEVICE and UNIT are not used.
  *   TRANSPORT=DIRECT (default) is the network card.
- *   CHECK: return code 0 if a dnetd runs, 5 (WARN) if not.
+ *   CHECK: return code 0 if a dnetd runs, 5 (WARN) if not. With WAIT it
+ *   waits up to that long for a dnetd that is still starting (one just
+ *   started with Run, or one waiting for the TCP/IP stack), and returns
+ *   as soon as it runs or has given up.
+ *   SHOWADDR prints the address of the gateway line in GATEWAY (default
+ *   ENVARC:DECnet/Gateway), without a newline, for the installer;
+ *   return code 10 if the file is no client line.
  *   STOP: ends the running dnetd (as Ctrl-C), however it was started,
  *   and waits until it is gone; 5 (WARN) if none runs.
  *   Both look for dnetd's public port, not for a command name, so they
@@ -459,6 +466,59 @@ static BOOL running(void)
 	return r;
 }
 
+/* While dnetd starts (before its DN_PORTNAME port exists) it holds this
+   port, so that CHECK WAIT can tell "still starting" from "gave up". */
+#define START_PORTNAME DN_PORTNAME ".start"
+static struct MsgPort *startport;
+
+static BOOL starting(void)
+{
+	BOOL r;
+
+	Forbid();
+	r = FindPort((STRPTR)START_PORTNAME) != NULL;
+	Permit();
+	return r;
+}
+
+static void start_begin(void)
+{
+	startport = CreateMsgPort();
+	if (startport) {
+		startport->mp_Node.ln_Name = (char *)START_PORTNAME;
+		startport->mp_Node.ln_Pri = 0;
+		AddPort(startport);
+	}
+}
+
+static void start_end(void)
+{
+	if (startport) {
+		RemPort(startport);
+		DeleteMsgPort(startport);
+		startport = NULL;
+	}
+}
+
+/* CHECK WAIT=secs: a dnetd just started with Run may not even have loaded
+   yet, so up to 10 s without any sign of it count as still loading */
+static int check_wait(LONG secs)
+{
+	LONG t;
+	BOOL seen = FALSE;
+
+	for (t = 0; t < secs * 10; t++) {
+		if (running())
+			return RETURN_OK;
+		if (starting())
+			seen = TRUE;
+		else if (seen || t >= 100)
+			return running() ? RETURN_OK : RETURN_WARN;
+		Delay(TICKS_PER_SECOND / 10);
+	}
+	return running() ? RETURN_OK : RETURN_WARN;
+}
+
 /* STOP: Ctrl-C to the running dnetd, then wait up to 10 s for its end */
 static int stop_dnetd(void)
 {
@@ -486,8 +546,9 @@ static int stop_dnetd(void)
 
 int main(void)
 {
-	static const char template[] = "ADDR,DEVICE/K,UNIT/K/N,VERBOSE/S,LOG/K,CHECK/S,STOP/S,ROUTER/K,TRANSPORT/K,GATEWAY/K";
-	LONG args[10] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+	static const char template[] = "ADDR,DEVICE/K,UNIT/K/N,VERBOSE/S,LOG/K,CHECK/S,STOP/S,ROUTER/K,TRANSPORT/K,GATEWAY/K,"
+	                                     "WAIT/K/N,SHOWADDR/S";
+	LONG args[12] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 	const char *gwfile = "ENVARC:DECnet/Gateway";
 	UWORD garea, gnode;
 	struct RDArgs *rda;
@@ -503,13 +564,31 @@ int main(void)
 		PrintFault(IoErr(), (STRPTR)"dnetd");
 		return RETURN_FAIL;
 	}
+	if (args[11]) {                 /* SHOWADDR */
+		if (args[9] && *(const char *)args[9])
+			gwfile = (const char *)args[9];
+		if (gwt_line_addr(gwfile, &garea, &gnode)) {
+			Printf("%lu.%lu", (ULONG)garea, (ULONG)gnode);
+			rc = RETURN_OK;
+		} else {
+			Printf("dnetd: %s is not a DNGW1 client line\n", (STRPTR)gwfile);
+			rc = RETURN_ERROR;
+		}
+		FreeArgs(rda);
+		return rc;
+	}
 	if (args[5] || args[6]) {
-		rc = args[6] ? stop_dnetd() : running() ? RETURN_OK : RETURN_WARN;
+		if (args[6])
+			rc = stop_dnetd();
+		else if (args[10])
+			rc = check_wait(*(LONG *)args[10]);
+		else
+			rc = running() ? RETURN_OK : RETURN_WARN;
 		FreeArgs(rda);
 		return rc;
 	}
 	/* before anything else, so a second start leaves the log alone */
-	if (running()) {
+	if (running() || starting()) {
 		PutStr((STRPTR)"dnetd: already running\n");
 		FreeArgs(rda);
 		return RETURN_WARN;
@@ -530,6 +609,7 @@ int main(void)
 		FreeArgs(rda);
 		return RETURN_FAIL;
 	}
+	start_begin();
 	logfile = (const char *)args[4];
 	if (logfile) {
 		BPTR fh = Open((STRPTR)logfile, MODE_NEWFILE);     /* start empty */
@@ -538,6 +618,7 @@ int main(void)
 	}
 	if (args[0] && !parse_addr((const char *)args[0], &addr)) {
 		out("dnetd: bad ADDR, use area.node (e.g. 1.10)\n");
+		start_end();
 		FreeArgs(rda);
 		return RETURN_FAIL;
 	}
@@ -545,6 +626,7 @@ int main(void)
 	if (args[7] && *(const char *)args[7] &&
 	    !parse_addr((const char *)args[7], &router)) {
 		out("dnetd: bad ROUTER, use area.node (e.g. 1.1) or leave it empty\n");
+		start_end();
 		FreeArgs(rda);
 		return RETURN_FAIL;
 	}
@@ -628,6 +710,7 @@ core:
 		dn_shutdown();
 		goto out;
 	}
+	start_end();                    /* DN_PORTNAME is there now */
 	if (udpmode)
 		out("dnetd: node %s through gateway %s, Ctrl-C to stop\n",
 		    (STRPTR)dn_ntoa(addr), (STRPTR)gwt_host());
@@ -708,6 +791,7 @@ core:
 	dn_shutdown();
 out:
 	cleanup();
+	start_end();
 	FreeArgs(rda);
 	(void)version;
 	return rc;
