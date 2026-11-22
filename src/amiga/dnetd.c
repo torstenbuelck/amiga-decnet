@@ -4,6 +4,7 @@
  *
  * Usage: dnetd ADDR=area.node [DEVICE=uaenet.device] [UNIT=n] [VERBOSE]
  *              [LOG=file] [ROUTER=area.node]
+ *        dnetd TRANSPORT=UDP [GATEWAY=file] [ADDR=area.node] ...
  *        dnetd CHECK
  *        dnetd STOP
  *   LOG appends each message to file, opened only for that line, so the
@@ -11,6 +12,13 @@
  *   ROUTER is the router to use while no router hello is heard, for
  *   networks that do not deliver DECnet multicast (many WLANs). A router
  *   heard on the network always wins. Empty = none.
+ *   TRANSPORT=UDP: no network card, the frames go through Hans Hübner's
+ *   decnet-gateway tunnel over the TCP/IP stack (bsdsocket.library, which
+ *   must run first). GATEWAY is the file with the DNGW1 client line
+ *   (default ENVARC:DECnet/Gateway); the counter epoch is kept in the
+ *   same name + "Epoch". The node gets the line's address; an ADDR given
+ *   as well must be the same. DEVICE and UNIT are not used.
+ *   TRANSPORT=DIRECT (default) is the network card.
  *   CHECK: return code 0 if a dnetd runs, 5 (WARN) if not.
  *   STOP: ends the running dnetd (as Ctrl-C), however it was started,
  *   and waits until it is gone; 5 (WARN) if none runs.
@@ -48,6 +56,7 @@
 #include "dnmsg.h"
 #include "dnserver.h"
 #include "s2buff.h"
+#include "dngwamiga.h"
 
 #define NREAD   32      /* a2065.device: VMS bursts of 9+ frames within 25 us */
 #define NTREAD  8       /* reads for the tap's ethertype (LAT) */
@@ -70,6 +79,8 @@ static ULONG started_secs;
 static const char *logfile;
 static struct TagItem *buffertags;
 static const char *devname = "uaenet.device";
+static BOOL udpmode;            /* TRANSPORT=UDP: the gateway tunnel */
+static UBYTE uframe[BUFLEN];
 
 /* All dnetd output goes through here: console or LOG file. */
 static void out(const char *fmt, ...)
@@ -103,6 +114,15 @@ static void send_type(UWORD type, const UBYTE *dst, const UBYTE *payload, ULONG 
 
 	if (len + 14 > BUFLEN)
 		return;
+	if (udpmode) {                  /* no padding: the gateway's LAN side pads */
+		memcpy(uframe, dst, 6);
+		memcpy(uframe + 6, mymac, 6);
+		uframe[12] = type >> 8;
+		uframe[13] = type & 0xff;
+		memcpy(uframe + 14, payload, len);
+		gwt_send(uframe, len + 14);
+		return;
+	}
 	wr->ios2_Req.io_Command = CMD_WRITE;
 	wr->ios2_PacketType = type;
 	memcpy(wr->ios2_DstAddr, dst, 6);
@@ -241,6 +261,12 @@ int dnetd_tap_enable(UWORD type, const UBYTE *mcast)
 
 	if (type == DN_ETHERTYPE || (tap_type && tap_type != type))
 		return -1;
+	if (udpmode) {                  /* the gateway sends every DEC multicast */
+		if (!tap_type)
+			out("dnetd: passing ethertype %04lx to a program\n", (ULONG)type);
+		tap_type = type;
+		return 0;
+	}
 	if (!tap_type) {
 		for (i = 0; i < NTREAD; i++) {
 			struct IOSana2Req *r;
@@ -302,6 +328,30 @@ static void handle_frame(struct IOSana2Req *r, UBYTE *buf)
 	} else {
 		dn_input(r->ios2_SrcAddr, r->ios2_DstAddr, buf, len);
 	}
+}
+
+/* TRUE if s is word, any case (ASCII) */
+static BOOL is_word(const char *s, const char *word)
+{
+	for (; *s && *word; s++, word++)
+		if ((*s | 0x20) != (*word | 0x20))
+			return FALSE;
+	return !*s && !*word;
+}
+
+/* a frame from the gateway: dst src type payload */
+static void handle_gw_frame(UBYTE *f, ULONG len)
+{
+	UWORD type;
+
+	if (len < 14 || (memcmp(f, mymac, 6) != 0 && !(f[0] & 1)) ||
+	    memcmp(f + 6, mymac, 6) == 0)
+		return;
+	type = (f[12] << 8) | f[13];
+	if (type == DN_ETHERTYPE)
+		dn_input(f + 6, f, f + 14, len - 14);
+	else if (tap_type && type == tap_type)
+		srv_tap_input(f, len);
 }
 
 static BOOL parse_addr(const char *a, dn_u16 *out)
@@ -376,6 +426,7 @@ static void cleanup(void)
 		CloseDevice((struct IORequest *)ctl);
 		dev_open = FALSE;
 	}
+	gwt_close();
 	if (timer_open)
 		CloseDevice((struct IORequest *)treq);
 	if (ctl && !stuck)
@@ -435,11 +486,13 @@ static int stop_dnetd(void)
 
 int main(void)
 {
-	static const char template[] = "ADDR,DEVICE/K,UNIT/K/N,VERBOSE/S,LOG/K,CHECK/S,STOP/S,ROUTER/K";
-	LONG args[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+	static const char template[] = "ADDR,DEVICE/K,UNIT/K/N,VERBOSE/S,LOG/K,CHECK/S,STOP/S,ROUTER/K,TRANSPORT/K,GATEWAY/K";
+	LONG args[10] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+	const char *gwfile = "ENVARC:DECnet/Gateway";
+	UWORD garea, gnode;
 	struct RDArgs *rda;
 	LONG unit = 0;
-	dn_u16 addr, router = 0;
+	dn_u16 addr = 0, router = 0;
 	struct dn_env env;
 	struct timeval last, now;
 	ULONG srvsig;
@@ -461,7 +514,18 @@ int main(void)
 		FreeArgs(rda);
 		return RETURN_WARN;
 	}
-	if (!args[0]) {
+	if (args[8] && *(const char *)args[8]) {
+		if (is_word((const char *)args[8], "UDP"))
+			udpmode = TRUE;
+		else if (!is_word((const char *)args[8], "DIRECT")) {
+			PutStr((STRPTR)"dnetd: TRANSPORT is DIRECT or UDP\n");
+			FreeArgs(rda);
+			return RETURN_FAIL;
+		}
+	}
+	if (args[9] && *(const char *)args[9])
+		gwfile = (const char *)args[9];
+	if (!args[0] && !udpmode) {
 		PutStr((STRPTR)"dnetd: ADDR is required\n");
 		FreeArgs(rda);
 		return RETURN_FAIL;
@@ -472,7 +536,7 @@ int main(void)
 		if (fh)
 			Close(fh);
 	}
-	if (!parse_addr((const char *)args[0], &addr)) {
+	if (args[0] && !parse_addr((const char *)args[0], &addr)) {
 		out("dnetd: bad ADDR, use area.node (e.g. 1.10)\n");
 		FreeArgs(rda);
 		return RETURN_FAIL;
@@ -488,7 +552,6 @@ int main(void)
 		devname = (const char *)args[1];
 	if (args[2])
 		unit = *(LONG *)args[2];
-	dn_node_mac(mymac, addr);
 
 	port = CreateMsgPort();
 	wport = CreateMsgPort();
@@ -510,6 +573,14 @@ int main(void)
 	GetSysTime(&last);
 	started_secs = last.tv_secs;
 
+	if (udpmode) {
+		if (gwt_open(gwfile, addr, &garea, &gnode, out))
+			goto out;
+		addr = (dn_u16)((garea << 10) | gnode);
+		dn_node_mac(mymac, addr);
+		goto core;
+	}
+	dn_node_mac(mymac, addr);
 	if (!open_device(devname, unit, 0))
 		goto out;
 	if (!configure()) {
@@ -539,6 +610,7 @@ int main(void)
 		queue_read(i);
 	}
 
+core:
 	memset(&env, 0, sizeof env);
 	env.send_frame = env_send;
 	env.alloc = env_alloc;
@@ -556,8 +628,12 @@ int main(void)
 		dn_shutdown();
 		goto out;
 	}
-	out("dnetd: node %s on %s unit %ld%s, Ctrl-C to stop\n", (STRPTR)dn_ntoa(addr),
-	       (STRPTR)devname, unit, rawmode ? " (raw)" : "");
+	if (udpmode)
+		out("dnetd: node %s through gateway %s, Ctrl-C to stop\n",
+		    (STRPTR)dn_ntoa(addr), (STRPTR)gwt_host());
+	else
+		out("dnetd: node %s on %s unit %ld%s, Ctrl-C to stop\n", (STRPTR)dn_ntoa(addr),
+		    (STRPTR)devname, unit, rawmode ? " (raw)" : "");
 
 	rc = RETURN_OK;
 	for (;;) {
@@ -572,8 +648,19 @@ int main(void)
 			tpending = TRUE;
 		}
 
-		sig = Wait((1UL << port->mp_SigBit) | (1UL << tport->mp_SigBit) | srvsig |
-		           SIGBREAKF_CTRL_C);
+		sig = (1UL << port->mp_SigBit) | (1UL << tport->mp_SigBit) | srvsig |
+		      SIGBREAKF_CTRL_C;
+		if (udpmode) {
+			UBYTE *f;
+			ULONG flen;
+
+			if (gwt_wait(&sig))
+				while (gwt_recv(&f, &flen))
+					if (flen)
+						handle_gw_frame(f, flen);
+		} else {
+			sig = Wait(sig);
+		}
 		if (sig & SIGBREAKF_CTRL_C) {
 			out("dnetd: stopping\n");
 			break;
@@ -612,6 +699,8 @@ int main(void)
 			last = now;
 			dn_tick((unsigned)ms);
 			srv_tick((unsigned)ms);
+			if (udpmode)
+				gwt_tick();
 		}
 	}
 

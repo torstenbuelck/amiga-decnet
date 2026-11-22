@@ -5,8 +5,11 @@ CORE_H = ../core/dn.h ../core/dn_priv.h
 
 all: dnetd decnet.library dncheck dnstartup
 
-dnetd: dnetd.c s2buff.h dnserver.c dnserver.h dnmsg.h $(CORE) $(CORE_H)
-	$(CC) $(CFLAGS) -noixemul -o $@ dnetd.c dnserver.c $(CORE)
+DNGW = dngwamiga.c ../dngw/dngw.c
+DNGW_H = dngwamiga.h ../dngw/dngw.h
+
+dnetd: dnetd.c s2buff.h dnserver.c dnserver.h dnmsg.h $(CORE) $(CORE_H) $(DNGW) $(DNGW_H)
+	$(CC) $(CFLAGS) -noixemul -o $@ dnetd.c dnserver.c $(DNGW) $(CORE)
 
 dncheck: dncheck.c s2buff.h
 	$(CC) $(CFLAGS) -noixemul -o $@ dncheck.c
