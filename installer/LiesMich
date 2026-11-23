@@ -335,7 +335,10 @@ bis zu 30 Sekunden auf den TCP/IP-Stack. Von Hand:
 Steht die Verbindung beim Booten noch nicht (etwa ein WLAN, das Sie
 von Hand starten), braucht DECnet keinen Neustart: dnetd versucht es
 alle 30 Sekunden wieder und ist kurz nach dem Verbindungsaufbau
-erreichbar. Ein Zugriff auf DN: vorher schlägt nur fehl.
+erreichbar. Ein Zugriff auf DN: vorher schlägt nur fehl. dnetd
+übersteht auch, dass der TCP/IP-Stack beendet und neu gestartet wird
+(NetShutdown, z. B. durch die Menüpunkte "Go Online" der
+PiStorm-Images): Es wartet auf den Stack und macht dann weiter.
 
 Jeder Start zählt eine Nummer hoch, die das Gateway prüft (damit
 niemand alte Pakete wiederholen kann); dnetd hält sie in
@@ -354,13 +357,17 @@ Versionsgeschichte
 ------------------
 0.5 (22.11.2026)
   - DECnet über ein DECnet-Gateway per TCP/IP (decnet-gateway von Hans
-    Hübner, z. B. bei RetroStar): dnetd 0.10 TRANSPORT=UDP, die
+    Hübner, z. B. bei RetroStar): dnetd TRANSPORT=UDP, die
     Installation fragt "Netzwerkkarte oder Gateway", übernimmt die
     Client-Zeile und setzt DECnet hinter die TCP/IP-Software; siehe
     "Über ein DECnet-Gateway"
   - dnetd 0.10 sucht den Namen des Gateways in einem eigenen
     Prozess: Fällt das Netz aus, meldet DN: einen Fehler, statt zu
     hängen, und der Tunnel kommt von selbst zurück
+  - dnetd 0.11 beendet sich nicht mehr, wenn der TCP/IP-Stack
+    heruntergefahren wird (NetShutdown, z. B. die Menüpunkte "Go
+    Online" der PiStorm-Images); es wartet auf den Stack und macht
+    weiter
   - DECnet-Start wartet, bis dnetd läuft oder aufgegeben hat (dnetd
     CHECK WAIT), statt fest 5 Sekunden
   - dnstartup 0.4: AFTERNET setzt den Block hinter die Netzwerk-Software

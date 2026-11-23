@@ -304,7 +304,9 @@ S:User-Startup, after the TCP/IP software. At boot dnetd waits up to
 If the connection is not up yet at boot (say, a WLAN you start by
 hand), DECnet needs no restart: dnetd tries again every 30 seconds
 and is reachable shortly after the connection comes up. Using DN:
-before that just fails.
+before that just fails. dnetd also survives the TCP/IP stack being
+shut down and started again (NetShutdown, e.g. by the "Go Online"
+menu items of the PiStorm images): it waits for the stack and goes on.
 
 Each start counts a number up that the gateway checks (so that nobody
 can replay old packets); dnetd keeps it in ENVARC:DECnet/GatewayEpoch
@@ -323,13 +325,16 @@ Version history
 ---------------
 0.5 (22.11.2026)
   - DECnet through a DECnet gateway over TCP/IP (decnet-gateway by
-    Hans Hübner, e.g. at RetroStar): dnetd 0.10 TRANSPORT=UDP, the
+    Hans Hübner, e.g. at RetroStar): dnetd TRANSPORT=UDP, the
     installer asks "network card or gateway", takes the client line,
     and puts DECnet after the TCP/IP software; see "Through a DECnet
     gateway"
   - dnetd 0.10 looks the gateway's name up in a process of its own:
     when the network goes away, DN: reports an error instead of
     hanging, and the tunnel comes back by itself
+  - dnetd 0.11 no longer stops when the TCP/IP stack is shut down
+    (NetShutdown, e.g. the "Go Online" menu items of the PiStorm
+    images); it waits for the stack and goes on
   - DECnet-Start waits until dnetd runs or has given up (dnetd CHECK
     WAIT), instead of a fixed 5 seconds
   - dnstartup 0.4: AFTERNET puts the block after the network software

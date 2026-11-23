@@ -8,6 +8,7 @@
  */
 #include <exec/types.h>
 #include <exec/memory.h>
+#include <exec/execbase.h>
 #include <dos/dos.h>
 #include <dos/dostags.h>
 #include <devices/timer.h>
@@ -17,6 +18,7 @@
 #include <proto/timer.h>
 #include <proto/bsdsocket.h>
 
+#include <amitcp/socketbasetags.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 #include <netinet/in.h>
@@ -45,8 +47,11 @@ static BOOL have_addr, alive;
 static ULONG last_tx, last_rx;                  /* ms */
 static ULONG last_resolve;                      /* ms, when the last lookup ended */
 static UBYTE *pkt;                              /* DNGW_MAXPKT */
+static BYTE netsig = -1;                        /* the stack's break signal */
+static ULONG down_since;                        /* ms, stack gone (sock < 0) */
 
 #define RESOLVE_EVERY_MS 30000UL
+#define REOPEN_EVERY_MS  10000UL
 
 /* The gateway's name is looked up in a process of its own: without a
    network gethostbyname() can block for minutes, and dnetd must go on
@@ -131,6 +136,67 @@ static void set_addr(ULONG a)
 	gwaddr.sin_port = htons(port);
 	gwaddr.sin_addr.s_addr = a;
 	have_addr = TRUE;
+}
+
+/* bsdsocket.library and the UDP socket. The stack's break signal is a
+   signal of our own, not Ctrl-C: when the network is shut down (Roadshow's
+   NetShutdown, e.g. from the PiStorm "Go Online" menu items) the stack
+   sends it to every program that has the library open. dnetd then lets
+   go of the library and waits for the stack; Ctrl-C stays the user's
+   stop. */
+static BOOL net_open(void)
+{
+	LONG one = 1;
+
+	if (!SocketBase && !(SocketBase = OpenLibrary((STRPTR)"bsdsocket.library", 4)))
+		return FALSE;
+	SetSignal(0, 1UL << netsig);
+	SocketBaseTags(SBTM_SETVAL(SBTC_BREAKMASK), 1UL << netsig, TAG_END);
+	sock = socket(AF_INET, SOCK_DGRAM, 0);
+	if (sock < 0) {
+		logfn("dnetd: no UDP socket (error %ld)\n", Errno());
+		CloseLibrary(SocketBase);
+		SocketBase = NULL;
+		return FALSE;
+	}
+	IoctlSocket(sock, FIONBIO, (char *)&one);
+	return TRUE;
+}
+
+static void net_close(void)
+{
+	if (sock >= 0)
+		CloseSocket(sock);
+	sock = -1;
+	if (SocketBase)
+		CloseLibrary(SocketBase);
+	SocketBase = NULL;
+}
+
+/* the stack is going down: let it, and try again every 10 s */
+static void net_down(void)
+{
+	net_close();
+	alive = FALSE;
+	down_since = now_ms();
+	logfn("dnetd: TCP/IP stack shut down, the tunnel waits for it\n");
+}
+
+/* the stack is back when its library is there again (AddNetInterface or
+   the next "Go Online" loads it); dnetd never loads it itself */
+static void net_retry(void)
+{
+	BOOL there;
+
+	down_since = now_ms();
+	Forbid();
+	there = FindName(&SysBase->LibList, (STRPTR)"bsdsocket.library") != NULL;
+	Permit();
+	if (!there || !net_open())
+		return;
+	logfn("dnetd: TCP/IP stack is back\n");
+	last_rx = now_ms();                 /* the gateway gets 50 s to answer */
+	gwt_send(NULL, 0);
 }
 
 /* the lookup process: one message in, the answer back */
@@ -225,7 +291,6 @@ int gwt_open(const char *linefile, UWORD want, UWORD *area, UWORD *node, gwt_log
 	ULONG saved = 0;
 	BOOL have = FALSE;
 	uint32_t epoch;
-	LONG one = 1;
 	int i;
 
 	logfn = log;
@@ -259,7 +324,12 @@ int gwt_open(const char *linefile, UWORD want, UWORD *area, UWORD *node, gwt_log
 
 	pkt = AllocVec(DNGW_MAXPKT, MEMF_ANY);
 	rsv_port = CreateMsgPort();
-	if (!pkt || !rsv_port)
+#ifdef GWT_TESTSIG
+	netsig = SIGBREAKB_CTRL_F;          /* test: "Break <dnetd> F" = NetShutdown */
+#else
+	netsig = AllocSignal(-1);
+#endif
+	if (!pkt || !rsv_port || netsig < 0)
 		return -1;
 	/* at boot the TCP/IP stack may still be starting */
 	for (i = 0; i < 30 && !(SocketBase = OpenLibrary((STRPTR)"bsdsocket.library", 4)); i++)
@@ -268,12 +338,8 @@ int gwt_open(const char *linefile, UWORD want, UWORD *area, UWORD *node, gwt_log
 		logfn("dnetd: no bsdsocket.library: TCP/IP must run before DECnet\n");
 		return -1;
 	}
-	sock = socket(AF_INET, SOCK_DGRAM, 0);
-	if (sock < 0) {
-		logfn("dnetd: no UDP socket (error %ld)\n", Errno());
+	if (!net_open())
 		return -1;
-	}
-	IoctlSocket(sock, FIONBIO, (char *)&one);
 
 	epoch = dngw_start(&gw, keyid, key, unix_time(), saved, have);
 	memset(key, 0, sizeof key);
@@ -327,12 +393,12 @@ void gwt_close(void)
 	if (rsv_port)
 		DeleteMsgPort(rsv_port);
 	rsv_port = NULL;
-	if (sock >= 0)
-		CloseSocket(sock);
-	sock = -1;
-	if (SocketBase)
-		CloseLibrary(SocketBase);
-	SocketBase = NULL;
+	net_close();
+#ifndef GWT_TESTSIG
+	if (netsig >= 0)
+		FreeSignal(netsig);
+#endif
+	netsig = -1;
 	if (pkt)
 		FreeVec(pkt);
 	pkt = NULL;
@@ -341,13 +407,27 @@ void gwt_close(void)
 
 BOOL gwt_wait(ULONG *sigs)
 {
+	ULONG want = *sigs;
 	fd_set rd;
-	LONG r;
+	LONG r, err;
 
+	if (sock < 0) {                     /* no stack: only our own signals */
+		*sigs = Wait(want);
+		return FALSE;
+	}
 	FD_ZERO(&rd);
 	FD_SET(sock, &rd);
 	r = WaitSelect(sock + 1, &rd, NULL, NULL, NULL, sigs);
-	return r > 0 || r < 0;              /* on an error, try to read anyway */
+	err = r < 0 ? Errno() : 0;
+	if (r < 0)                          /* *sigs is undefined then */
+		*sigs = SetSignal(0, want) & want;
+	/* the break signal is the stack's alone (Ctrl-C is not in the mask);
+	   Roadshow posts it again, others may not: EINTR counts as well */
+	if ((SetSignal(0, 1UL << netsig) & (1UL << netsig)) || err == EINTR) {
+		net_down();
+		return FALSE;
+	}
+	return r != 0;                      /* on an error, try to read anyway */
 }
 
 BOOL gwt_recv(UBYTE **frame, ULONG *len)
@@ -355,6 +435,8 @@ BOOL gwt_recv(UBYTE **frame, ULONG *len)
 	LONG n;
 	unsigned l;
 
+	if (sock < 0)
+		return FALSE;
 	while ((n = recv(sock, pkt, DNGW_MAXPKT, 0)) > 0) {
 		if (!dngw_open(&gw, pkt, (unsigned)n, frame, &l))
 			continue;               /* silently, as the protocol says */
@@ -373,6 +455,13 @@ void gwt_tick(void)
 {
 	ULONG t = now_ms();
 
+	resolve_done();
+	if (sock < 0) {                     /* the stack went down */
+		if (t - down_since >= REOPEN_EVERY_MS)
+			net_retry();
+		return;
+	}
+
 	if (t - last_tx >= DNGW_KEEPALIVE_S * 1000UL)
 		gwt_send(NULL, 0);
 	if (alive && t - last_rx > DNGW_LOST_S * 1000UL) {
@@ -382,7 +471,6 @@ void gwt_tick(void)
 	/* no address yet (DNS not up at boot), or the gateway lost: a home
 	   line's address may have changed. Keepalives go on to the old
 	   address meanwhile, so the tunnel is back as soon as the net is. */
-	resolve_done();
 	if (!rsv_proc && t - last_resolve >= RESOLVE_EVERY_MS &&
 	    (!have_addr || (!alive && t - last_rx > DNGW_LOST_S * 1000UL)))
 		resolve_start();
